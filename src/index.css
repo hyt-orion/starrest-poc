@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl bg-slate-800 px-4 py-3 text-white outline-none ring-1 ring-slate-700 focus:ring-emerald-500;
+  }
+  .btn-primary {
+    @apply w-full rounded-xl bg-emerald-600 py-3 font-medium text-white transition hover:bg-emerald-500;
+  }
+  .btn-link {
+    @apply w-full py-2 text-sm text-white/40 transition hover:text-white/60;
+  }
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
