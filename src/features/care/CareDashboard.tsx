@@ -78,7 +78,7 @@ export function CareDashboard() {
       </div>
 
       <div className="relative h-full w-1/2">
-        <canvas ref={canvasRef} width={160} height={120} className="h-full w-full object-cover" />
+        <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
         {!connected && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
             <WifiOff className="h-12 w-12 text-white/20" />
