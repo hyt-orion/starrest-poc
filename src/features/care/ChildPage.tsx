@@ -70,7 +70,7 @@ export function ChildPage() {
           lastDetectRef.current = now
           void detect(now)
         }
-        if (now - lastSendRef.current > 333) {
+        if (now - lastSendRef.current > 200) {
           lastSendRef.current = now
           sendFrame()
         }
