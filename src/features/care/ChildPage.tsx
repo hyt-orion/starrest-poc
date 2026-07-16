@@ -52,17 +52,7 @@ export function ChildPage() {
     })
 
     async function init() {
-      setStatus('加载 AI 模型…')
-      try {
-        await Promise.race([
-          getPoseDetector(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时')), 10000)),
-        ])
-        setStatus('看护中 · 传输中')
-      } catch (e) {
-        setStatus('模型失败: ' + String(e).slice(0, 60))
-      }
-      // setInterval 代替 requestAnimationFrame（后台标签页不暂停，只限流到1fps）
+      // 立即启动视频传输（不等模型）
       loopInterval = window.setInterval(() => {
         if (cancelled) return
         const now = performance.now()
@@ -75,6 +65,18 @@ export function ChildPage() {
           sendFrame()
         }
       }, 100)
+
+      // 模型后台加载（60秒超时，不阻塞视频传输）
+      setStatus('加载 AI 模型（约10MB）…')
+      try {
+        await Promise.race([
+          getPoseDetector(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(60s)')), 60000)),
+        ])
+        setStatus('看护中 · 传输中')
+      } catch (e) {
+        setStatus('模型失败: ' + String(e).slice(0, 60))
+      }
     }
 
     async function detect(now: number) {
