@@ -1,6 +1,11 @@
-const CACHE = 'starrest-v1'
+const CACHE = 'starrest-v2'
 
-self.addEventListener('install', () => {
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+    ),
+  )
   self.skipWaiting()
 })
 
