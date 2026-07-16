@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useCameraStream } from './useCameraStream'
+import { getPoseDetector } from '../../infrastructure/ml/poseDetector'
 import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
 import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
@@ -33,8 +34,6 @@ export function CareDashboard() {
   const rafRef = useRef(0)
   const lastDetectRef = useRef(0)
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
-  const workerRef = useRef<Worker | null>(null)
-  const workerReadyRef = useRef(false)
 
   useEffect(() => {
     if (!ready || !stream || showPrivacy) return
@@ -44,34 +43,25 @@ export function CareDashboard() {
     const audioOk = analyzer.start(stream)
     audioAnalyzerRef.current = analyzer
 
-    const worker = new Worker(
-      new URL('../../infrastructure/ml/poseWorker.ts', import.meta.url),
-      { type: 'module' },
-    )
-    workerRef.current = worker
-
-    worker.onmessage = (e: MessageEvent) => {
-      if (e.data.type === 'ready') {
-        workerReadyRef.current = true
-        setStatus(audioOk ? '看护中（视频+音频）' : '看护中（仅视频）')
-        rafRef.current = requestAnimationFrame(loop)
-      } else if (e.data.type === 'result') {
-        handleLandmarks(e.data.landmarks)
-      } else if (e.data.type === 'error') {
-        setStatus('模型加载失败：' + e.data.error)
-      }
-    }
-
-    worker.postMessage({ type: 'init' })
-    setStatus('加载 AI 模型…')
     void baselineRef.current.initWithHistory().then(() => {
       if (baselineRef.current.ready) setBaselineReady(true)
     })
 
+    async function init() {
+      try {
+        setStatus('加载 AI 模型…')
+        await getPoseDetector()
+        setStatus(audioOk ? '看护中（视频+音频）' : '看护中（仅视频）')
+        rafRef.current = requestAnimationFrame(loop)
+      } catch (e) {
+        setStatus('模型加载失败：' + String(e))
+      }
+    }
+
     function loop() {
       if (cancelled) return
       const now = performance.now()
-      if (now - lastDetectRef.current > 200 && workerReadyRef.current) {
+      if (now - lastDetectRef.current > 200) {
         lastDetectRef.current = now
         void detect(now)
       }
@@ -82,43 +72,43 @@ export function CareDashboard() {
       const video = videoRef.current
       if (!video || video.readyState < 2) return
       try {
-        const bitmap = await createImageBitmap(video)
-        workerRef.current?.postMessage({ type: 'detect', bitmap, timestamp: now }, [bitmap])
-      } catch { /* skip */ }
-    }
+        const detector = await getPoseDetector()
+        const result = detector.detectForVideo(video, now)
+        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+        setAudioScore(af.audioScore)
 
-    function handleLandmarks(landmarks: NormalizedLandmark[] | null) {
-      const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
-      setAudioScore(af.audioScore)
-
-      let idx: number
-      if (landmarks && landmarks.length > 0) {
-        const prev = prevLandmarksRef.current
-        if (prev) {
-          const vi = displacementToIndex(computeDisplacement(landmarks, prev))
-          idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
+        let idx: number
+        if (result.landmarks && result.landmarks.length > 0) {
+          const curr = result.landmarks[0]
+          const prev = prevLandmarksRef.current
+          if (prev) {
+            const vi = displacementToIndex(computeDisplacement(curr, prev))
+            idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
+          } else {
+            idx = af.audioScore
+          }
+          prevLandmarksRef.current = curr
         } else {
           idx = af.audioScore
         }
-        prevLandmarksRef.current = landmarks
-      } else {
-        idx = af.audioScore
-      }
 
-      const bl = baselineRef.current
-      bl.push(idx)
-      setIndex(idx)
-      if (bl.ready) {
-        setBaselineReady(true)
-        setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
+        const bl = baselineRef.current
+        bl.push(idx)
+        setIndex(idx)
+        if (bl.ready) {
+          setBaselineReady(true)
+          setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
+        }
+      } catch {
+        // 推理失败静默跳过
       }
     }
 
+    void init()
     return () => {
       cancelled = true
       cancelAnimationFrame(rafRef.current)
       analyzer.stop()
-      worker.terminate()
     }
   }, [ready, stream, showPrivacy])
 
@@ -160,7 +150,6 @@ export function CareDashboard() {
         </div>
         <p className="pb-2 text-center text-xs text-white/50">孩子状态 · 活跃指数</p>
 
-        {/* 喘息活动（可切换面板） */}
         {activeRelax === 'none' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
             <p className="mb-2 text-sm font-medium text-white/70">家长喘息活动</p>
