@@ -36,7 +36,7 @@ export class AudioAnalyzer {
     if (!this.analyser || !this.dataArray) {
       return { audioScore: 0, isSilent: true, energy: 0 }
     }
-    this.analyser.getByteFrequencyData(this.dataArray)
+    this.analyser.getByteFrequencyData(this.dataArray as Uint8Array<ArrayBuffer>)
 
     // 计算频域 RMS 能量
     let sum = 0
