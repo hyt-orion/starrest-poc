@@ -22,7 +22,6 @@ export function ChildPage() {
 
   const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
-  const rafRef = useRef(0)
   const lastDetectRef = useRef(0)
   const lastSendRef = useRef(0)
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
@@ -35,6 +34,7 @@ export function ChildPage() {
   useEffect(() => {
     if (!ready || !stream) return
     let cancelled = false
+    let loopInterval: number | undefined
 
     const analyzer = new AudioAnalyzer()
     analyzer.start(stream)
@@ -62,22 +62,19 @@ export function ChildPage() {
       } catch {
         setStatus('模型未加载 · 仅传输视频')
       }
-      rafRef.current = requestAnimationFrame(loop)
-    }
-
-    function loop() {
-      if (cancelled) return
-      const now = performance.now()
-      if (now - lastDetectRef.current > 200) {
-        lastDetectRef.current = now
-        void detect(now)
-      }
-      // 发送独立于推理（2fps，推理失败也发送）
-      if (now - lastSendRef.current > 333) {
-        lastSendRef.current = now
-        sendFrame()
-      }
-      rafRef.current = requestAnimationFrame(loop)
+      // setInterval 代替 requestAnimationFrame（后台标签页不暂停，只限流到1fps）
+      loopInterval = window.setInterval(() => {
+        if (cancelled) return
+        const now = performance.now()
+        if (now - lastDetectRef.current > 200) {
+          lastDetectRef.current = now
+          void detect(now)
+        }
+        if (now - lastSendRef.current > 333) {
+          lastSendRef.current = now
+          sendFrame()
+        }
+      }, 100)
     }
 
     async function detect(now: number) {
@@ -138,7 +135,7 @@ export function ChildPage() {
     void init()
     return () => {
       cancelled = true
-      cancelAnimationFrame(rafRef.current)
+      if (loopInterval) clearInterval(loopInterval)
       analyzer.stop()
     }
   }, [ready, stream, send])
