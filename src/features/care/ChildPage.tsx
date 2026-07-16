@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useCameraStream } from './useCameraStream'
-import { getPoseDetector } from '../../infrastructure/ml/poseDetector'
 import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
-import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { useCareSender } from '../../shared/useCareChannel'
@@ -20,7 +17,6 @@ export function ChildPage() {
   const [status, setStatus] = useState('正在初始化…')
   const [audioScore, setAudioScore] = useState(0)
 
-  const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
   const lastDetectRef = useRef(0)
   const lastSendRef = useRef(0)
@@ -51,70 +47,37 @@ export function ChildPage() {
       }
     })
 
-    async function init() {
-      // 立即启动视频传输（不等模型）
-      loopInterval = window.setInterval(() => {
-        if (cancelled) return
-        const now = performance.now()
-        if (now - lastDetectRef.current > 200) {
-          lastDetectRef.current = now
-          void detect(now)
-        }
-        if (now - lastSendRef.current > 200) {
-          lastSendRef.current = now
-          sendFrame()
-        }
-      }, 100)
-
-      // 模型后台加载（60秒超时，不阻塞视频传输）
-      try {
-        await Promise.race([
-          getPoseDetector((s) => setStatus(s)),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(180s)')), 180000)),
-        ])
-        setStatus('看护中 · 传输中')
-      } catch (e) {
-        setStatus('模型失败: ' + String(e).slice(0, 60))
+    // 立即启动视频+音频传输（不加载 WASM，避免页面崩溃）
+    setStatus('视频+音频传输中')
+    loopInterval = window.setInterval(() => {
+      if (cancelled) return
+      const now = performance.now()
+      if (now - lastDetectRef.current > 200) {
+        lastDetectRef.current = now
+        detect()
       }
-    }
+      if (now - lastSendRef.current > 200) {
+        lastSendRef.current = now
+        sendFrame()
+      }
+    }, 100)
 
-    async function detect(now: number) {
-      const video = videoRef.current
-      if (!video || video.readyState < 2) return
-      try {
-        const detector = await getPoseDetector()
-        const result = detector.detectForVideo(video, now)
-        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
-        audioScoreRef.current = af.audioScore
-        setAudioScore(af.audioScore)
+    function detect() {
+      const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+      audioScoreRef.current = af.audioScore
+      setAudioScore(af.audioScore)
 
-        let idx: number
-        if (result.landmarks && result.landmarks.length > 0) {
-          const curr = result.landmarks[0]
-          const prev = prevLandmarksRef.current
-          if (prev) {
-            idx = computeMultimodalIndex(displacementToIndex(computeDisplacement(curr, prev)), af.audioScore, af.isSilent)
-          } else {
-            idx = af.audioScore
-          }
-          prevLandmarksRef.current = curr
-        } else {
-          idx = af.audioScore
-        }
-
-        const bl = baselineRef.current
-        bl.push(idx)
-        indexRef.current = idx
-        setIndex(idx)
-        if (bl.ready) {
-          baselineReadyRef.current = true
-          setBaselineReady(true)
-          const lv = classifyAlert(bl.zScore, idx, 'normal').level
-          levelRef.current = lv
-          setLevel(lv)
-        }
-      } catch {
-        // 推理失败不影响发送
+      const idx = af.audioScore
+      const bl = baselineRef.current
+      bl.push(idx)
+      indexRef.current = idx
+      setIndex(idx)
+      if (bl.ready) {
+        baselineReadyRef.current = true
+        setBaselineReady(true)
+        const lv = classifyAlert(bl.zScore, idx, 'normal').level
+        levelRef.current = lv
+        setLevel(lv)
       }
     }
 
@@ -133,7 +96,6 @@ export function ChildPage() {
       })
     }
 
-    void init()
     return () => {
       cancelled = true
       if (loopInterval) clearInterval(loopInterval)
