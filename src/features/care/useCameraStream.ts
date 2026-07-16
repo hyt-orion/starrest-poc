@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 
-/** 获取摄像头流，视频数据仅本地使用，不上传 */
+/** 获取摄像头+麦克风流，数据仅本地使用，不上传 */
 export function useCameraStream() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  const [stream, setStream] = useState<MediaStream | null>(null)
 
   useEffect(() => {
     let active = true
     navigator.mediaDevices
       .getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
+        audio: true,
       })
       .then((s) => {
         if (!active) {
@@ -20,6 +21,7 @@ export function useCameraStream() {
           return
         }
         streamRef.current = s
+        setStream(s)
         if (videoRef.current) {
           videoRef.current.srcObject = s
           videoRef.current.onloadedmetadata = () => {
@@ -35,5 +37,5 @@ export function useCameraStream() {
     }
   }, [])
 
-  return { videoRef, error, ready }
+  return { videoRef, stream, error, ready }
 }

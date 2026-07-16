@@ -26,3 +26,22 @@ export function displacementToIndex(displacement: number): number {
   const raw = Math.min(displacement / 0.05, 1)
   return Math.round(raw * 100)
 }
+
+/**
+ * 多模态活跃指数合成。
+ * Index = w_v·videoIndex + w_a·audioScore
+ * 静默惩罚：视频显示活跃但音频完全静默时降低指数（可能误报）。
+ */
+export function computeMultimodalIndex(
+  videoIndex: number,
+  audioScore: number,
+  isSilent: boolean,
+): number {
+  const w_v = 0.6
+  const w_a = 0.4
+  let raw = w_v * videoIndex + w_a * audioScore
+  if (isSilent && videoIndex > 30) {
+    raw *= 0.7
+  }
+  return Math.min(Math.round(raw), 100)
+}

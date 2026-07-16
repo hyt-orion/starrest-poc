@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useCameraStream } from './useCameraStream'
 import { getPoseDetector } from '../../infrastructure/ml/poseDetector'
-import { computeDisplacement, displacementToIndex } from './activityIndex'
+import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
+import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { FloatBall } from './FloatBall'
@@ -11,32 +12,41 @@ import { Settings } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
 
 /**
- * 看护主流程：摄像头 → MediaPipe Pose → 活跃指数 → 基线 z-score → 分级 → 悬浮球
- * 对应文档调用链 1：CareDashboard → useCameraStream → inferenceEngine → alertClassifier → FloatBall
+ * 看护主流程（多模态）：
+ * 视频：摄像头 → MediaPipe Pose → 关节位移 → videoIndex
+ * 音频：麦克风 → AudioAnalyzer → RMS 能量 → audioScore
+ * 合成：computeMultimodalIndex → 活跃指数 → 基线 z-score → 分级 → 悬浮球
  */
 export function CareDashboard() {
-  const { videoRef, error, ready } = useCameraStream()
+  const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
   const settings = getSettings()
   const [index, setIndex] = useState(0)
   const [level, setLevel] = useState<AlertLevel>('calm')
   const [baselineReady, setBaselineReady] = useState(false)
   const [status, setStatus] = useState('正在初始化…')
+  const [audioScore, setAudioScore] = useState(0)
 
   const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
   const rafRef = useRef(0)
   const lastDetectRef = useRef(0)
+  const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
 
   useEffect(() => {
-    if (!ready) return
+    if (!ready || !stream) return
     let cancelled = false
+
+    // 启动音频分析
+    const analyzer = new AudioAnalyzer()
+    const audioOk = analyzer.start(stream)
+    audioAnalyzerRef.current = analyzer
 
     async function init() {
       try {
         setStatus('加载 AI 模型…')
         await getPoseDetector()
-        setStatus('看护中')
+        setStatus(audioOk ? '看护中（视频+音频）' : '看护中（仅视频）')
         rafRef.current = requestAnimationFrame(loop)
       } catch (e) {
         setStatus('模型加载失败：' + String(e))
@@ -59,25 +69,30 @@ export function CareDashboard() {
       try {
         const detector = await getPoseDetector()
         const result = detector.detectForVideo(video, now)
+        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+        setAudioScore(af.audioScore)
+
+        let idx: number
         if (result.landmarks && result.landmarks.length > 0) {
           const curr = result.landmarks[0]
           const prev = prevLandmarksRef.current
           if (prev) {
-            const disp = computeDisplacement(curr, prev)
-            const idx = displacementToIndex(disp)
-            const bl = baselineRef.current
-            bl.push(idx)
-            setIndex(idx)
-            if (bl.ready) {
-              setBaselineReady(true)
-              const state = classifyAlert(bl.zScore, idx, settings.alertSensitivity)
-              setLevel(state.level)
-            }
+            const vi = displacementToIndex(computeDisplacement(curr, prev))
+            idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
+          } else {
+            idx = af.audioScore
           }
           prevLandmarksRef.current = curr
         } else {
-          baselineRef.current.push(0)
-          setIndex(0)
+          idx = af.audioScore
+        }
+
+        const bl = baselineRef.current
+        bl.push(idx)
+        setIndex(idx)
+        if (bl.ready) {
+          setBaselineReady(true)
+          setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
         }
       } catch {
         // 推理失败静默跳过
@@ -88,8 +103,9 @@ export function CareDashboard() {
     return () => {
       cancelled = true
       cancelAnimationFrame(rafRef.current)
+      analyzer.stop()
     }
-  }, [ready])
+  }, [ready, stream])
 
   if (error) {
     return (
@@ -98,7 +114,7 @@ export function CareDashboard() {
           <FloatBall index={0} level="calm" baselineReady={false} pushEnabled={settings.pushEnabled} />
           <p className="text-lg font-semibold text-red-400">摄像头无法启动</p>
           <p className="text-sm text-slate-400">{error}</p>
-          <p className="text-xs text-slate-500">请允许摄像头权限。视频仅本地处理，不上传。</p>
+          <p className="text-xs text-slate-500">请允许摄像头和麦克风权限。数据仅本地处理，不上传。</p>
         </div>
         <div className="flex w-1/2 items-center justify-center p-8 text-center">
           <p className="text-sm text-slate-500">星宝看护画面待摄像头就绪</p>
@@ -111,20 +127,17 @@ export function CareDashboard() {
     <div className="flex h-full w-full overflow-hidden bg-slate-950">
       {/* ── 左半：家长端 ── */}
       <div className="flex w-1/2 flex-col border-r border-slate-800">
-        {/* 顶部栏 */}
         <div className="flex items-center justify-between px-4 pt-4">
           <span className="text-sm font-medium text-white/70">星憩时刻</span>
           <button onClick={() => navigate('/settings')} className="text-white/40 hover:text-white">
             <Settings className="h-5 w-5" />
           </button>
         </div>
-        {/* 悬浮球 */}
         <div className="flex items-center justify-center pt-4 pb-2">
           <FloatBall index={index} level={level} baselineReady={baselineReady} pushEnabled={settings.pushEnabled} />
         </div>
         <p className="pb-2 text-center text-xs text-white/50">孩子状态 · 活跃指数</p>
 
-        {/* 喘息活动 */}
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
           <p className="mb-2 text-sm font-medium text-white/70">家长喘息活动</p>
           <button className="w-full max-w-xs rounded-xl border border-emerald-700/40 bg-emerald-900/30 p-4 text-left transition hover:bg-emerald-900/50">
@@ -141,11 +154,10 @@ export function CareDashboard() {
           </button>
         </div>
 
-        {/* 底部状态 */}
         <div className="p-4 text-center">
           <p className="text-xs text-white/50">
             {baselineReady
-              ? `基线 μ=${baselineRef.current.mean.toFixed(1)} σ=${baselineRef.current.std.toFixed(1)} · 样本 ${baselineRef.current.size}`
+              ? `μ=${baselineRef.current.mean.toFixed(1)} σ=${baselineRef.current.std.toFixed(1)} · 综合${index} 视频+音频${audioScore}`
               : status}
           </p>
         </div>
@@ -161,10 +173,10 @@ export function CareDashboard() {
           <div className="space-y-0.5">
             <p className="text-sm text-white/80">{status}</p>
             {baselineReady && (
-              <p className="text-xs text-white/50">{LEVEL_LABELS[level]} · 指数 {index}</p>
+              <p className="text-xs text-white/50">{LEVEL_LABELS[level]} · 综合{index} · 音频{audioScore}</p>
             )}
           </div>
-          <p className="text-[10px] text-white/40">视频仅本地处理 · 不上传</p>
+          <p className="text-[10px] text-white/40">视频+音频仅本地处理</p>
         </div>
       </div>
     </div>
