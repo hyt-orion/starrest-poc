@@ -19,6 +19,7 @@ export function CareDashboard() {
   const settings = getSettings()
   const { status, connected } = useCareReceiver()
   const [activeRelax, setActiveRelax] = useState<RelaxMode>('none')
+  const [recvCount, setRecvCount] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const index = status?.index ?? 0
@@ -28,6 +29,7 @@ export function CareDashboard() {
 
   useEffect(() => {
     if (!status?.frame || !canvasRef.current) return
+    setRecvCount((c) => c + 1)
     const img = new Image()
     img.onload = () => {
       const ctx = canvasRef.current?.getContext('2d')
@@ -105,7 +107,7 @@ export function CareDashboard() {
         {connected && (
           <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
             <p className="text-sm text-white/80">{LEVEL_LABELS[level]} · 指数 {index}</p>
-            <p className="text-[10px] text-white/40">视频+数字接收中</p>
+            <p className="text-[10px] text-white/40">接收{recvCount}帧</p>
           </div>
         )}
       </div>
