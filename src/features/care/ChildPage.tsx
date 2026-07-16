@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCameraStream } from './useCameraStream'
 import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
+import { detectPose, type NormalizedPoint } from '../../infrastructure/ml/moveNetDetector'
+import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { useCareSender } from '../../shared/useCareChannel'
@@ -17,6 +19,7 @@ export function ChildPage() {
   const [status, setStatus] = useState('正在初始化…')
   const [audioScore, setAudioScore] = useState(0)
 
+  const prevLandmarksRef = useRef<NormalizedPoint[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
   const lastDetectRef = useRef(0)
   const lastSendRef = useRef(0)
@@ -47,37 +50,66 @@ export function ChildPage() {
       }
     })
 
-    // 立即启动视频+音频传输（不加载 WASM，避免页面崩溃）
-    setStatus('视频+音频传输中')
-    loopInterval = window.setInterval(() => {
-      if (cancelled) return
-      const now = performance.now()
-      if (now - lastDetectRef.current > 200) {
-        lastDetectRef.current = now
-        detect()
-      }
-      if (now - lastSendRef.current > 200) {
-        lastSendRef.current = now
-        sendFrame()
-      }
-    }, 100)
+    async function init() {
+      loopInterval = window.setInterval(() => {
+        if (cancelled) return
+        const now = performance.now()
+        if (now - lastDetectRef.current > 200) {
+          lastDetectRef.current = now
+          void detect()
+        }
+        if (now - lastSendRef.current > 200) {
+          lastSendRef.current = now
+          sendFrame()
+        }
+      }, 100)
 
-    function detect() {
-      const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
-      audioScoreRef.current = af.audioScore
-      setAudioScore(af.audioScore)
+      // MoveNet 后台加载（WebGL，不需要 WASM，不会崩溃）
+      setStatus('加载MoveNet模型...')
+      try {
+        const video = videoRef.current
+        if (video) await detectPose(video, (s) => setStatus(s))
+      } catch (e) {
+        setStatus('模型失败: ' + (e instanceof Error ? e.message : String(e)).slice(0, 60))
+      }
+    }
 
-      const idx = af.audioScore
-      const bl = baselineRef.current
-      bl.push(idx)
-      indexRef.current = idx
-      setIndex(idx)
-      if (bl.ready) {
-        baselineReadyRef.current = true
-        setBaselineReady(true)
-        const lv = classifyAlert(bl.zScore, idx, 'normal').level
-        levelRef.current = lv
-        setLevel(lv)
+    async function detect() {
+      const video = videoRef.current
+      if (!video || video.readyState < 2) return
+      try {
+        const keypoints = await detectPose(video)
+        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+        audioScoreRef.current = af.audioScore
+        setAudioScore(af.audioScore)
+
+        let idx: number
+        if (keypoints && keypoints.length > 0) {
+          const prev = prevLandmarksRef.current
+          if (prev) {
+            const vi = displacementToIndex(computeDisplacement(keypoints, prev))
+            idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
+          } else {
+            idx = af.audioScore
+          }
+          prevLandmarksRef.current = keypoints
+        } else {
+          idx = af.audioScore
+        }
+
+        const bl = baselineRef.current
+        bl.push(idx)
+        indexRef.current = idx
+        setIndex(idx)
+        if (bl.ready) {
+          baselineReadyRef.current = true
+          setBaselineReady(true)
+          const lv = classifyAlert(bl.zScore, idx, 'normal').level
+          levelRef.current = lv
+          setLevel(lv)
+        }
+      } catch {
+        // 推理失败不影响发送
       }
     }
 
@@ -96,6 +128,7 @@ export function ChildPage() {
       })
     }
 
+    void init()
     return () => {
       cancelled = true
       if (loopInterval) clearInterval(loopInterval)
