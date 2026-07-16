@@ -7,16 +7,13 @@ import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { FloatBall } from './FloatBall'
 import { PrivacyScreen } from './PrivacyScreen'
+import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
 import { useNavigate } from 'react-router-dom'
 import { Settings } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
 
-/**
- * 看护主流程（多模态 + Worker）：
- * 视频：摄像头 → createImageBitmap → Worker(PoseLandmarker) → landmarks
- * 音频：麦克风 → AudioAnalyzer → RMS → audioScore
- * 合成：computeMultimodalIndex → 活跃指数 → 基线 z-score → 分级 → 悬浮球
- */
+type RelaxMode = 'none' | 'meditation' | 'craft' | 'treehole'
+
 export function CareDashboard() {
   const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
@@ -26,6 +23,7 @@ export function CareDashboard() {
   const [baselineReady, setBaselineReady] = useState(false)
   const [status, setStatus] = useState('正在初始化…')
   const [audioScore, setAudioScore] = useState(0)
+  const [activeRelax, setActiveRelax] = useState<RelaxMode>('none')
   const [showPrivacy, setShowPrivacy] = useState(
     () => !localStorage.getItem('starrest_privacy_confirmed'),
   )
@@ -42,12 +40,10 @@ export function CareDashboard() {
     if (!ready || !stream || showPrivacy) return
     let cancelled = false
 
-    // 音频分析
     const analyzer = new AudioAnalyzer()
     const audioOk = analyzer.start(stream)
     audioAnalyzerRef.current = analyzer
 
-    // Pose Worker（推理在 Worker 线程，不卡主线程）
     const worker = new Worker(
       new URL('../../infrastructure/ml/poseWorker.ts', import.meta.url),
       { type: 'module' },
@@ -88,9 +84,7 @@ export function CareDashboard() {
       try {
         const bitmap = await createImageBitmap(video)
         workerRef.current?.postMessage({ type: 'detect', bitmap, timestamp: now }, [bitmap])
-      } catch {
-        // createImageBitmap 失败，静默跳过
-      }
+      } catch { /* skip */ }
     }
 
     function handleLandmarks(landmarks: NormalizedLandmark[] | null) {
@@ -133,9 +127,7 @@ export function CareDashboard() {
     setShowPrivacy(false)
   }
 
-  if (showPrivacy) {
-    return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
-  }
+  if (showPrivacy) return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
 
   if (error) {
     return (
@@ -144,7 +136,7 @@ export function CareDashboard() {
           <FloatBall index={0} level="calm" baselineReady={false} pushEnabled={settings.pushEnabled} />
           <p className="text-lg font-semibold text-red-400">摄像头无法启动</p>
           <p className="text-sm text-slate-400">{error}</p>
-          <p className="text-xs text-slate-500">请允许摄像头和麦克风权限。数据仅本地处理，不上传。</p>
+          <p className="text-xs text-slate-500">请允许摄像头和麦克风权限。数据仅本地处理。</p>
         </div>
         <div className="flex w-1/2 items-center justify-center p-8 text-center">
           <p className="text-sm text-slate-500">星宝看护画面待摄像头就绪</p>
@@ -168,26 +160,35 @@ export function CareDashboard() {
         </div>
         <p className="pb-2 text-center text-xs text-white/50">孩子状态 · 活跃指数</p>
 
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
-          <p className="mb-2 text-sm font-medium text-white/70">家长喘息活动</p>
-          <button className="w-full max-w-xs rounded-xl border border-emerald-700/40 bg-emerald-900/30 p-4 text-left transition hover:bg-emerald-900/50">
-            <span className="text-sm font-medium text-emerald-300">正念冥想引导</span>
-            <span className="block text-xs text-white/40">15 分钟 · 纯语音，闭眼跟着 AI 做</span>
-          </button>
-          <button className="w-full max-w-xs rounded-xl border border-purple-700/40 bg-purple-900/30 p-4 text-left transition hover:bg-purple-900/50">
-            <span className="text-sm font-medium text-purple-300">艺术手作</span>
-            <span className="block text-xs text-white/40">30 分钟 · 跟着 AI 视频做手工</span>
-          </button>
-          <button className="w-full max-w-xs rounded-xl border border-blue-700/40 bg-blue-900/30 p-4 text-left transition hover:bg-blue-900/50">
-            <span className="text-sm font-medium text-blue-300">匿名树洞</span>
-            <span className="block text-xs text-white/40">不限 · 只看或自己打字发泄</span>
-          </button>
-        </div>
+        {/* 喘息活动（可切换面板） */}
+        {activeRelax === 'none' ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
+            <p className="mb-2 text-sm font-medium text-white/70">家长喘息活动</p>
+            <button onClick={() => setActiveRelax('meditation')} className="w-full max-w-xs rounded-xl border border-emerald-700/40 bg-emerald-900/30 p-4 text-left transition hover:bg-emerald-900/50">
+              <span className="text-sm font-medium text-emerald-300">正念冥想引导</span>
+              <span className="block text-xs text-white/40">4-7-8 呼吸法 · 跟随节奏</span>
+            </button>
+            <button onClick={() => setActiveRelax('craft')} className="w-full max-w-xs rounded-xl border border-purple-700/40 bg-purple-900/30 p-4 text-left transition hover:bg-purple-900/50">
+              <span className="text-sm font-medium text-purple-300">艺术手作</span>
+              <span className="block text-xs text-white/40">即将上线</span>
+            </button>
+            <button onClick={() => setActiveRelax('treehole')} className="w-full max-w-xs rounded-xl border border-blue-700/40 bg-blue-900/30 p-4 text-left transition hover:bg-blue-900/50">
+              <span className="text-sm font-medium text-blue-300">匿名树洞</span>
+              <span className="block text-xs text-white/40">打字发泄 · 完全匿名</span>
+            </button>
+          </div>
+        ) : activeRelax === 'meditation' ? (
+          <MeditationPanel onClose={() => setActiveRelax('none')} />
+        ) : activeRelax === 'craft' ? (
+          <CraftPanel onClose={() => setActiveRelax('none')} />
+        ) : (
+          <TreeHolePanel onClose={() => setActiveRelax('none')} />
+        )}
 
         <div className="p-4 text-center">
           <p className="text-xs text-white/50">
             {baselineReady
-              ? `μ=${baselineRef.current.mean.toFixed(1)} σ=${baselineRef.current.std.toFixed(1)} · 综合${index} 视频+音频${audioScore}`
+              ? `μ=${baselineRef.current.mean.toFixed(1)} σ=${baselineRef.current.std.toFixed(1)} · 综合${index} 音频${audioScore}`
               : status}
           </p>
         </div>
