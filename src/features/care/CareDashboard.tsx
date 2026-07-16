@@ -10,6 +10,7 @@ import { FloatBall } from './FloatBall'
 import { useNavigate } from 'react-router-dom'
 import { Settings } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
+import { PrivacyScreen } from './PrivacyScreen'
 
 /**
  * 看护主流程（多模态）：
@@ -26,6 +27,18 @@ export function CareDashboard() {
   const [baselineReady, setBaselineReady] = useState(false)
   const [status, setStatus] = useState('正在初始化…')
   const [audioScore, setAudioScore] = useState(0)
+  const [showPrivacy, setShowPrivacy] = useState(
+    () => !localStorage.getItem('starrest_privacy_confirmed'),
+  )
+
+  function handlePrivacyConfirm() {
+    localStorage.setItem('starrest_privacy_confirmed', '1')
+    setShowPrivacy(false)
+  }
+
+  if (showPrivacy) {
+    return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
+  }
 
   const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
