@@ -1,146 +1,49 @@
 import { useEffect, useRef, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
-import { useCameraStream } from './useCameraStream'
-import { getPoseDetector } from '../../infrastructure/ml/poseDetector'
-import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
-import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
-import { BaselineEngine } from './baselineEngine'
-import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
+import { useCareReceiver } from '../../shared/useCareChannel'
 import { FloatBall } from './FloatBall'
-import { PrivacyScreen } from './PrivacyScreen'
 import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
 import { useNavigate } from 'react-router-dom'
-import { Settings } from 'lucide-react'
+import { Settings, WifiOff, ExternalLink } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
+import { LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 
 type RelaxMode = 'none' | 'meditation' | 'craft' | 'treehole'
 
+/**
+ * 家长端：接收星宝端传来的视频截帧+数字，显示在右半。
+ * 左半：悬浮球 + 喘息活动。
+ * 不做本地摄像头/推理——推理在星宝端。
+ */
 export function CareDashboard() {
-  const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
   const settings = getSettings()
-  const [index, setIndex] = useState(0)
-  const [level, setLevel] = useState<AlertLevel>('calm')
-  const [baselineReady, setBaselineReady] = useState(false)
-  const [status, setStatus] = useState('正在初始化…')
-  const [audioScore, setAudioScore] = useState(0)
+  const { status, connected } = useCareReceiver()
   const [activeRelax, setActiveRelax] = useState<RelaxMode>('none')
-  const [showPrivacy, setShowPrivacy] = useState(
-    () => !localStorage.getItem('starrest_privacy_confirmed'),
-  )
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
-  const baselineRef = useRef(new BaselineEngine(60))
-  const rafRef = useRef(0)
-  const lastDetectRef = useRef(0)
-  const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
+  const index = status?.index ?? 0
+  const level: AlertLevel = status?.level ?? 'calm'
+  const audioScore = status?.audioScore ?? 0
+  const baselineReady = status?.baselineReady ?? false
 
   useEffect(() => {
-    if (!ready || !stream || showPrivacy) return
-    let cancelled = false
-
-    const analyzer = new AudioAnalyzer()
-    const audioOk = analyzer.start(stream)
-    audioAnalyzerRef.current = analyzer
-
-    void baselineRef.current.initWithHistory().then(() => {
-      if (baselineRef.current.ready) setBaselineReady(true)
-    })
-
-    async function init() {
-      try {
-        setStatus('加载 AI 模型…')
-        await getPoseDetector()
-        setStatus(audioOk ? '看护中（视频+音频）' : '看护中（仅视频）')
-        rafRef.current = requestAnimationFrame(loop)
-      } catch (e) {
-        setStatus('模型加载失败：' + String(e))
+    if (!status?.frame || !canvasRef.current) return
+    const img = new Image()
+    img.onload = () => {
+      const ctx = canvasRef.current?.getContext('2d')
+      if (ctx && canvasRef.current) {
+        ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height)
       }
     }
-
-    function loop() {
-      if (cancelled) return
-      const now = performance.now()
-      if (now - lastDetectRef.current > 200) {
-        lastDetectRef.current = now
-        void detect(now)
-      }
-      rafRef.current = requestAnimationFrame(loop)
-    }
-
-    async function detect(now: number) {
-      const video = videoRef.current
-      if (!video || video.readyState < 2) return
-      try {
-        const detector = await getPoseDetector()
-        const result = detector.detectForVideo(video, now)
-        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
-        setAudioScore(af.audioScore)
-
-        let idx: number
-        if (result.landmarks && result.landmarks.length > 0) {
-          const curr = result.landmarks[0]
-          const prev = prevLandmarksRef.current
-          if (prev) {
-            const vi = displacementToIndex(computeDisplacement(curr, prev))
-            idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
-          } else {
-            idx = af.audioScore
-          }
-          prevLandmarksRef.current = curr
-        } else {
-          idx = af.audioScore
-        }
-
-        const bl = baselineRef.current
-        bl.push(idx)
-        setIndex(idx)
-        if (bl.ready) {
-          setBaselineReady(true)
-          setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
-        }
-      } catch {
-        // 推理失败静默跳过
-      }
-    }
-
-    void init()
-    return () => {
-      cancelled = true
-      cancelAnimationFrame(rafRef.current)
-      analyzer.stop()
-    }
-  }, [ready, stream, showPrivacy])
-
-  function handlePrivacyConfirm() {
-    localStorage.setItem('starrest_privacy_confirmed', '1')
-    setShowPrivacy(false)
-  }
-
-  if (showPrivacy) return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
-
-  if (error) {
-    return (
-      <div className="flex h-full w-full overflow-hidden bg-slate-950">
-        <div className="flex w-1/2 flex-col items-center justify-center gap-3 border-r border-slate-800 p-8 text-center">
-          <FloatBall index={0} level="calm" baselineReady={false} pushEnabled={settings.pushEnabled} />
-          <p className="text-lg font-semibold text-red-400">摄像头无法启动</p>
-          <p className="text-sm text-slate-400">{error}</p>
-          <p className="text-xs text-slate-500">请允许摄像头和麦克风权限。数据仅本地处理。</p>
-        </div>
-        <div className="flex w-1/2 items-center justify-center p-8 text-center">
-          <p className="text-sm text-slate-500">星宝看护画面待摄像头就绪</p>
-        </div>
-      </div>
-    )
-  }
+    img.src = status.frame
+  }, [status?.frame])
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-950">
       {/* ── 左半：家长端 ── */}
       <div className="flex w-1/2 flex-col border-r border-slate-800">
         <div className="flex items-center justify-between px-4 pt-4">
-          <span className="text-sm font-medium text-white/70">星憩时刻</span>
+          <span className="text-sm font-medium text-white/70">星憩时刻 · 家长端</span>
           <button onClick={() => navigate('/settings')} className="text-white/40 hover:text-white">
             <Settings className="h-5 w-5" />
           </button>
@@ -148,7 +51,9 @@ export function CareDashboard() {
         <div className="flex items-center justify-center pt-4 pb-2">
           <FloatBall index={index} level={level} baselineReady={baselineReady} pushEnabled={settings.pushEnabled} />
         </div>
-        <p className="pb-2 text-center text-xs text-white/50">孩子状态 · 活跃指数</p>
+        <p className="pb-2 text-center text-xs text-white/50">
+          {connected ? `孩子状态 · 综合${index} 音频${audioScore}` : '等待星宝端连接…'}
+        </p>
 
         {activeRelax === 'none' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
@@ -176,28 +81,34 @@ export function CareDashboard() {
 
         <div className="p-4 text-center">
           <p className="text-xs text-white/50">
-            {baselineReady
-              ? `μ=${baselineRef.current.mean.toFixed(1)} σ=${baselineRef.current.std.toFixed(1)} · 综合${index} 音频${audioScore}`
-              : status}
+            {connected && baselineReady ? `${LEVEL_LABELS[level]} · 综合${index}` : '等待连接…'}
           </p>
         </div>
       </div>
 
-      {/* ── 右半：星宝端 ── */}
+      {/* ── 右半：星宝端画面（接收的视频帧） ── */}
       <div className="relative h-full w-1/2">
-        <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
-        <div className="absolute left-4 top-4 rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
-          <p className="text-xs font-medium text-white/80">星宝看护</p>
-        </div>
-        <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
-          <div className="space-y-0.5">
-            <p className="text-sm text-white/80">{status}</p>
-            {baselineReady && (
-              <p className="text-xs text-white/50">{LEVEL_LABELS[level]} · 综合{index} · 音频{audioScore}</p>
-            )}
+        {connected ? (
+          <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <WifiOff className="h-12 w-12 text-white/20" />
+            <p className="text-sm text-white/40">星宝端未连接</p>
+            <p className="text-xs text-white/30">在星宝的设备上打开星宝端</p>
+            <a href="#/child" target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white">
+              <ExternalLink className="h-4 w-4" /> 打开星宝端
+            </a>
           </div>
-          <p className="text-[10px] text-white/40">视频+音频仅本地处理</p>
+        )}
+        <div className="absolute left-4 top-4 rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
+          <p className="text-xs font-medium text-white/80">{connected ? '星宝看护 · 实时' : '星宝看护 · 离线'}</p>
         </div>
+        {connected && (
+          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
+            <p className="text-sm text-white/80">{LEVEL_LABELS[level]} · 指数 {index}</p>
+            <p className="text-[10px] text-white/40">视频+数字接收中</p>
+          </div>
+        )}
       </div>
     </div>
   )
