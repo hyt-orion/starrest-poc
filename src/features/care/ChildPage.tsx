@@ -41,8 +41,8 @@ export function ChildPage() {
     audioAnalyzerRef.current = analyzer
 
     canvasRef.current = document.createElement('canvas')
-    canvasRef.current.width = 320
-    canvasRef.current.height = 240
+    canvasRef.current.width = 160
+    canvasRef.current.height = 120
 
     void baselineRef.current.initWithHistory().then(() => {
       if (baselineRef.current.ready) {
@@ -73,7 +73,7 @@ export function ChildPage() {
         void detect(now)
       }
       // 发送独立于推理（2fps，推理失败也发送）
-      if (now - lastSendRef.current > 500) {
+      if (now - lastSendRef.current > 333) {
         lastSendRef.current = now
         sendFrame()
       }
@@ -125,12 +125,12 @@ export function ChildPage() {
       if (!video || video.readyState < 2) return
       const canvas = canvasRef.current
       if (!canvas) return
-      canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
+      canvas.getContext('2d')?.drawImage(video, 0, 0, 160, 120)
       send({
         index: indexRef.current,
         level: levelRef.current,
         audioScore: audioScoreRef.current,
-        frame: canvas.toDataURL('image/jpeg', 0.5),
+        frame: canvas.toDataURL('image/jpeg', 0.3),
         baselineReady: baselineReadyRef.current,
       })
     }

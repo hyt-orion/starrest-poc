@@ -51,11 +51,11 @@ export function useCareReceiver() {
     }
     window.addEventListener('storage', handler)
 
-    // 方式2：轮询兜底（500ms 直接读 localStorage，不依赖事件）
+    // 方式2：轮询兜底（200ms 直接读 localStorage，不依赖事件）
     const interval = setInterval(() => {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) process(raw)
-    }, 500)
+    }, 200)
 
     return () => {
       window.removeEventListener('storage', handler)
