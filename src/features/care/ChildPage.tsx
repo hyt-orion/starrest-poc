@@ -70,7 +70,7 @@ export function ChildPage() {
       try {
         await Promise.race([
           getPoseDetector((s) => setStatus(s)),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(120s),网络慢?')), 120000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(180s)')), 180000)),
         ])
         setStatus('看护中 · 传输中')
       } catch (e) {
