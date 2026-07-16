@@ -30,8 +30,7 @@ const PAGES: Page[] = [
     content: (
       <div className="space-y-3">
         <p><strong className="text-white">手机号 + 密码</strong>：首次输入手机号和密码将自动注册账号，后续用同样信息直接登录。密码至少 6 位。</p>
-        <p><strong className="text-white">微信 / QQ</strong>：当前为模拟登录，上线后接入真实第三方授权。</p>
-        <p>手机号为唯一账号标识，微信 / QQ 可绑定到同一账号。</p>
+        <p>手机号为唯一账号标识。</p>
       </div>
     ),
   },
