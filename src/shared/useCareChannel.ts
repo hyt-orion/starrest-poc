@@ -20,16 +20,20 @@ export function useCareSender() {
         STORAGE_KEY,
         JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() }),
       )
-    } catch {
-      // quota exceeded
-    }
+    } catch {}
   }, [])
 }
 
-export function useCareReceiver() {
-  const [status, setStatus] = useState<CareStatus | null>(null)
+/** frame 通过 onFrame callback 直接传出，不经过 React state（避免大字符串 re-render） */
+export function useCareReceiver(onFrame?: (frame: string) => void) {
+  const [index, setIndex] = useState(0)
+  const [level, setLevel] = useState<AlertLevel>('calm')
+  const [audioScore, setAudioScore] = useState(0)
+  const [baselineReady, setBaselineReady] = useState(false)
   const [connected, setConnected] = useState(false)
   const lastTsRef = useRef(0)
+  const onFrameRef = useRef(onFrame)
+  onFrameRef.current = onFrame
 
   useEffect(() => {
     function process(raw: string) {
@@ -37,21 +41,21 @@ export function useCareReceiver() {
         const data = JSON.parse(raw) as CareStatus
         if (data.type === 'status' && data.timestamp !== lastTsRef.current) {
           lastTsRef.current = data.timestamp
-          setStatus(data)
+          setIndex(data.index)
+          setLevel(data.level)
+          setAudioScore(data.audioScore)
+          setBaselineReady(data.baselineReady)
           setConnected(true)
+          if (data.frame) onFrameRef.current?.(data.frame)
         }
-      } catch {
-        // parse error
-      }
+      } catch {}
     }
 
-    // 方式1：storage 事件（跨标签触发）
     function handler(e: StorageEvent) {
       if (e.key === STORAGE_KEY && e.newValue) process(e.newValue)
     }
     window.addEventListener('storage', handler)
 
-    // 方式2：轮询兜底（200ms 直接读 localStorage，不依赖事件）
     const interval = setInterval(() => {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) process(raw)
@@ -63,5 +67,5 @@ export function useCareReceiver() {
     }
   }, [])
 
-  return { status, connected }
+  return { index, level, audioScore, baselineReady, connected }
 }

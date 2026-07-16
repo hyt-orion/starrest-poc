@@ -1,51 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { useCareReceiver } from '../../shared/useCareChannel'
 import { FloatBall } from './FloatBall'
 import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
 import { useNavigate } from 'react-router-dom'
 import { Settings, WifiOff, ExternalLink } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
-import { LEVEL_LABELS, type AlertLevel } from './alertClassifier'
+import { LEVEL_LABELS } from './alertClassifier'
 
 type RelaxMode = 'none' | 'meditation' | 'craft' | 'treehole'
 
-/**
- * 家长端：接收星宝端传来的视频截帧+数字，显示在右半。
- * 左半：悬浮球 + 喘息活动。
- * 不做本地摄像头/推理——推理在星宝端。
- */
 export function CareDashboard() {
   const navigate = useNavigate()
   const settings = getSettings()
-  const { status, connected } = useCareReceiver()
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [activeRelax, setActiveRelax] = useState<RelaxMode>('none')
   const [recvCount, setRecvCount] = useState(0)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const index = status?.index ?? 0
-  const level: AlertLevel = status?.level ?? 'calm'
-  const audioScore = status?.audioScore ?? 0
-  const baselineReady = status?.baselineReady ?? false
-
-  useEffect(() => {
-    if (!status?.frame || !canvasRef.current) return
+  // frame 通过 callback 直接画 canvas，不经过 React state
+  const handleFrame = useCallback((frame: string) => {
     setRecvCount((c) => c + 1)
     const canvas = canvasRef.current
+    if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    fetch(status.frame)
-      .then((r) => r.blob())
-      .then(createImageBitmap)
-      .then((bitmap) => {
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-        bitmap.close()
-      })
-      .catch(() => {})
-  }, [status?.frame])
+    const img = new Image()
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    img.src = frame
+  }, [])
+
+  const { index, level, audioScore, baselineReady, connected } = useCareReceiver(handleFrame)
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-950">
-      {/* ── 左半：家长端 ── */}
       <div className="flex w-1/2 flex-col border-r border-slate-800">
         <div className="flex items-center justify-between px-4 pt-4">
           <span className="text-sm font-medium text-white/70">星憩时刻 · 家长端</span>
@@ -57,7 +43,7 @@ export function CareDashboard() {
           <FloatBall index={index} level={level} baselineReady={baselineReady} pushEnabled={settings.pushEnabled} />
         </div>
         <p className="pb-2 text-center text-xs text-white/50">
-          {connected ? `孩子状态 · 综合${index} 音频${audioScore}` : '等待星宝端连接…'}
+          {connected ? `综合${index} 音频${audioScore} · 接收${recvCount}帧` : '等待星宝端连接…'}
         </p>
 
         {activeRelax === 'none' ? (
@@ -86,14 +72,13 @@ export function CareDashboard() {
 
         <div className="p-4 text-center">
           <p className="text-xs text-white/50">
-            {connected && baselineReady ? `${LEVEL_LABELS[level]} · 综合${index}` : '等待连接…'}
+            {connected ? `${LEVEL_LABELS[level]} · 综合${index}` : '等待连接…'}
           </p>
         </div>
       </div>
 
-      {/* ── 右半：星宝端画面（接收的视频帧） ── */}
       <div className="relative h-full w-1/2">
-        <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
+        <canvas ref={canvasRef} width={160} height={120} className="h-full w-full object-cover" />
         {!connected && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
             <WifiOff className="h-12 w-12 text-white/20" />
