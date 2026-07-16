@@ -2,6 +2,8 @@ import { useRef, useState, useCallback } from 'react'
 import { useCareReceiver } from '../../shared/useCareChannel'
 import { FloatBall } from './FloatBall'
 import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
+import { BlindBox } from '../rewards/BlindBox'
+import { getRewards, completeSession, type Reward } from '../rewards/rewardsStore'
 import { useNavigate } from 'react-router-dom'
 import { Settings, WifiOff, ExternalLink } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
@@ -15,8 +17,10 @@ export function CareDashboard() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [activeRelax, setActiveRelax] = useState<RelaxMode>('none')
   const [recvCount, setRecvCount] = useState(0)
+  const [rewardState, setRewardState] = useState(getRewards())
+  const [showBlindBox, setShowBlindBox] = useState(false)
+  const [currentReward, setCurrentReward] = useState<Reward | null>(null)
 
-  // frame 通过 callback 直接画 canvas，不经过 React state
   const handleFrame = useCallback((frame: string) => {
     setRecvCount((c) => c + 1)
     const canvas = canvasRef.current
@@ -29,6 +33,14 @@ export function CareDashboard() {
   }, [])
 
   const { index, level, audioScore, baselineReady, connected } = useCareReceiver(handleFrame)
+
+  function handleRelaxClose() {
+    setActiveRelax('none')
+    const { state, newReward } = completeSession()
+    setRewardState(state)
+    setCurrentReward(newReward)
+    setShowBlindBox(true)
+  }
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-950">
@@ -63,17 +75,22 @@ export function CareDashboard() {
             </button>
           </div>
         ) : activeRelax === 'meditation' ? (
-          <MeditationPanel onClose={() => setActiveRelax('none')} />
+          <MeditationPanel onClose={handleRelaxClose} />
         ) : activeRelax === 'craft' ? (
-          <CraftPanel onClose={() => setActiveRelax('none')} />
+          <CraftPanel onClose={handleRelaxClose} />
         ) : (
-          <TreeHolePanel onClose={() => setActiveRelax('none')} />
+          <TreeHolePanel onClose={handleRelaxClose} />
         )}
 
         <div className="p-4 text-center">
           <p className="text-xs text-white/50">
             {connected ? `${LEVEL_LABELS[level]} · 综合${index}` : '等待连接…'}
           </p>
+          {rewardState.totalSessions > 0 && (
+            <p className="mt-1 text-xs text-emerald-400/60">
+              累计{rewardState.totalSessions}次 · 连续{rewardState.streak}天
+            </p>
+          )}
         </div>
       </div>
 
@@ -99,6 +116,10 @@ export function CareDashboard() {
           </div>
         )}
       </div>
+
+      {showBlindBox && currentReward && (
+        <BlindBox reward={currentReward} onClose={() => setShowBlindBox(false)} />
+      )}
     </div>
   )
 }
