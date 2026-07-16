@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useCameraStream } from './useCameraStream'
 import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
 import { detectPose, type NormalizedPoint } from '../../infrastructure/ml/moveNetDetector'
+import { pushKeypoints, classifyBehavior } from '../../infrastructure/ml/behaviorClassifier'
 import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
@@ -29,6 +30,7 @@ export function ChildPage() {
   const levelRef = useRef<AlertLevel>('calm')
   const audioScoreRef = useRef(0)
   const baselineReadyRef = useRef(false)
+  const behaviorRef = useRef('行为正常')
 
   useEffect(() => {
     if (!ready || !stream) return
@@ -38,33 +40,21 @@ export function ChildPage() {
     const analyzer = new AudioAnalyzer()
     analyzer.start(stream)
     audioAnalyzerRef.current = analyzer
-
     canvasRef.current = document.createElement('canvas')
     canvasRef.current.width = 320
     canvasRef.current.height = 240
 
     void baselineRef.current.initWithHistory().then(() => {
-      if (baselineRef.current.ready) {
-        baselineReadyRef.current = true
-        setBaselineReady(true)
-      }
+      if (baselineRef.current.ready) { baselineReadyRef.current = true; setBaselineReady(true) }
     })
 
     async function init() {
       loopInterval = window.setInterval(() => {
         if (cancelled) return
         const now = performance.now()
-        if (now - lastDetectRef.current > 200) {
-          lastDetectRef.current = now
-          void detect()
-        }
-        if (now - lastSendRef.current > 200) {
-          lastSendRef.current = now
-          sendFrame()
-        }
+        if (now - lastDetectRef.current > 200) { lastDetectRef.current = now; void detect() }
+        if (now - lastSendRef.current > 200) { lastSendRef.current = now; sendFrame() }
       }, 100)
-
-      // MoveNet 后台加载（WebGL，不需要 WASM，不会崩溃）
       setStatus('加载MoveNet模型...')
       try {
         const video = videoRef.current
@@ -82,35 +72,29 @@ export function ChildPage() {
         const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
         audioScoreRef.current = af.audioScore
         setAudioScore(af.audioScore)
-
         let idx: number
         if (keypoints && keypoints.length > 0) {
+          pushKeypoints(keypoints)
+          const beh = classifyBehavior()
+          behaviorRef.current = beh.message
           const prev = prevLandmarksRef.current
           if (prev) {
             const vi = displacementToIndex(computeDisplacement(keypoints, prev))
             idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
-          } else {
-            idx = af.audioScore
-          }
+            if (beh.type !== 'normal' && beh.type !== 'stillness') idx = Math.min(idx + 20, 100)
+          } else { idx = af.audioScore }
           prevLandmarksRef.current = keypoints
-        } else {
-          idx = af.audioScore
-        }
-
+        } else { idx = af.audioScore }
         const bl = baselineRef.current
         bl.push(idx)
         indexRef.current = idx
         setIndex(idx)
         if (bl.ready) {
-          baselineReadyRef.current = true
-          setBaselineReady(true)
+          baselineReadyRef.current = true; setBaselineReady(true)
           const lv = classifyAlert(bl.zScore, idx, 'normal').level
-          levelRef.current = lv
-          setLevel(lv)
+          levelRef.current = lv; setLevel(lv)
         }
-      } catch {
-        // 推理失败不影响发送
-      }
+      } catch {}
     }
 
     function sendFrame() {
@@ -120,20 +104,14 @@ export function ChildPage() {
       if (!canvas) return
       canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
       send({
-        index: indexRef.current,
-        level: levelRef.current,
-        audioScore: audioScoreRef.current,
-        frame: canvas.toDataURL('image/jpeg', 0.5),
-        baselineReady: baselineReadyRef.current,
+        index: indexRef.current, level: levelRef.current, audioScore: audioScoreRef.current,
+        frame: canvas.toDataURL('image/jpeg', 0.5), baselineReady: baselineReadyRef.current,
+        behavior: behaviorRef.current,
       })
     }
 
     void init()
-    return () => {
-      cancelled = true
-      if (loopInterval) clearInterval(loopInterval)
-      analyzer.stop()
-    }
+    return () => { cancelled = true; if (loopInterval) clearInterval(loopInterval); analyzer.stop() }
   }, [ready, stream, send])
 
   if (error) {
@@ -151,10 +129,10 @@ export function ChildPage() {
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
       <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
       <div className="absolute left-4 top-4 flex items-center gap-2">
-        <button onClick={() => navigate('/role')} className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
+        <button onClick={() => navigate('/role')} aria-label="返回" className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
           <ArrowLeft className="h-4 w-4 text-white/80" />
         </button>
-        <div className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
+        <div className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm" aria-live="polite">
           <p className="text-xs font-medium text-white/80">星宝端 · {status}</p>
         </div>
       </div>

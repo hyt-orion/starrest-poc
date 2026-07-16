@@ -32,7 +32,7 @@ export function CareDashboard() {
     img.src = frame
   }, [])
 
-  const { index, level, audioScore, baselineReady, connected } = useCareReceiver(handleFrame)
+  const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(handleFrame)
 
   function handleRelaxClose() {
     setActiveRelax('none')
@@ -47,7 +47,7 @@ export function CareDashboard() {
       <div className="flex w-1/2 flex-col border-r border-slate-800">
         <div className="flex items-center justify-between px-4 pt-4">
           <span className="text-sm font-medium text-white/70">星憩时刻 · 家长端</span>
-          <button onClick={() => navigate('/settings')} className="text-white/40 hover:text-white">
+          <button onClick={() => navigate('/settings')} aria-label="设置" className="text-white/40 hover:text-white">
             <Settings className="h-5 w-5" />
           </button>
         </div>
@@ -111,7 +111,10 @@ export function CareDashboard() {
         </div>
         {connected && (
           <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
-            <p className="text-sm text-white/80">{LEVEL_LABELS[level]} · 指数 {index}</p>
+            <div className="space-y-0.5">
+              <p className="text-sm text-white/80">{LEVEL_LABELS[level]} · 指数 {index}</p>
+              <p className="text-xs text-white/50">{behavior}</p>
+            </div>
             <p className="text-[10px] text-white/40">接收{recvCount}帧</p>
           </div>
         )}
