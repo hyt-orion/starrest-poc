@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { useCameraStream } from './useCameraStream'
-import { getPoseDetector } from '../../infrastructure/ml/poseDetector'
 import { AudioAnalyzer } from '../../infrastructure/ml/audioAnalyzer'
 import { computeDisplacement, displacementToIndex, computeMultimodalIndex } from './activityIndex'
 import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { FloatBall } from './FloatBall'
+import { PrivacyScreen } from './PrivacyScreen'
 import { useNavigate } from 'react-router-dom'
 import { Settings } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
-import { PrivacyScreen } from './PrivacyScreen'
 
 /**
- * 看护主流程（多模态）：
- * 视频：摄像头 → MediaPipe Pose → 关节位移 → videoIndex
- * 音频：麦克风 → AudioAnalyzer → RMS 能量 → audioScore
+ * 看护主流程（多模态 + Worker）：
+ * 视频：摄像头 → createImageBitmap → Worker(PoseLandmarker) → landmarks
+ * 音频：麦克风 → AudioAnalyzer → RMS → audioScore
  * 合成：computeMultimodalIndex → 活跃指数 → 基线 z-score → 分级 → 悬浮球
  */
 export function CareDashboard() {
@@ -31,45 +30,49 @@ export function CareDashboard() {
     () => !localStorage.getItem('starrest_privacy_confirmed'),
   )
 
-  function handlePrivacyConfirm() {
-    localStorage.setItem('starrest_privacy_confirmed', '1')
-    setShowPrivacy(false)
-  }
-
-  if (showPrivacy) {
-    return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
-  }
-
   const prevLandmarksRef = useRef<NormalizedLandmark[] | null>(null)
   const baselineRef = useRef(new BaselineEngine(60))
   const rafRef = useRef(0)
   const lastDetectRef = useRef(0)
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
+  const workerRef = useRef<Worker | null>(null)
+  const workerReadyRef = useRef(false)
 
   useEffect(() => {
-    if (!ready || !stream) return
+    if (!ready || !stream || showPrivacy) return
     let cancelled = false
 
-    // 启动音频分析
+    // 音频分析
     const analyzer = new AudioAnalyzer()
     const audioOk = analyzer.start(stream)
     audioAnalyzerRef.current = analyzer
 
-    async function init() {
-      try {
-        setStatus('加载 AI 模型…')
-        await getPoseDetector()
+    // Pose Worker（推理在 Worker 线程，不卡主线程）
+    const worker = new Worker(
+      new URL('../../infrastructure/ml/poseWorker.ts', import.meta.url),
+      { type: 'module' },
+    )
+    workerRef.current = worker
+
+    worker.onmessage = (e: MessageEvent) => {
+      if (e.data.type === 'ready') {
+        workerReadyRef.current = true
         setStatus(audioOk ? '看护中（视频+音频）' : '看护中（仅视频）')
         rafRef.current = requestAnimationFrame(loop)
-      } catch (e) {
-        setStatus('模型加载失败：' + String(e))
+      } else if (e.data.type === 'result') {
+        handleLandmarks(e.data.landmarks)
+      } else if (e.data.type === 'error') {
+        setStatus('模型加载失败：' + e.data.error)
       }
     }
+
+    worker.postMessage({ type: 'init' })
+    setStatus('加载 AI 模型…')
 
     function loop() {
       if (cancelled) return
       const now = performance.now()
-      if (now - lastDetectRef.current > 200) {
+      if (now - lastDetectRef.current > 200 && workerReadyRef.current) {
         lastDetectRef.current = now
         void detect(now)
       }
@@ -80,45 +83,56 @@ export function CareDashboard() {
       const video = videoRef.current
       if (!video || video.readyState < 2) return
       try {
-        const detector = await getPoseDetector()
-        const result = detector.detectForVideo(video, now)
-        const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
-        setAudioScore(af.audioScore)
-
-        let idx: number
-        if (result.landmarks && result.landmarks.length > 0) {
-          const curr = result.landmarks[0]
-          const prev = prevLandmarksRef.current
-          if (prev) {
-            const vi = displacementToIndex(computeDisplacement(curr, prev))
-            idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
-          } else {
-            idx = af.audioScore
-          }
-          prevLandmarksRef.current = curr
-        } else {
-          idx = af.audioScore
-        }
-
-        const bl = baselineRef.current
-        bl.push(idx)
-        setIndex(idx)
-        if (bl.ready) {
-          setBaselineReady(true)
-          setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
-        }
+        const bitmap = await createImageBitmap(video)
+        workerRef.current?.postMessage({ type: 'detect', bitmap, timestamp: now }, [bitmap])
       } catch {
-        // 推理失败静默跳过
+        // createImageBitmap 失败，静默跳过
       }
     }
 
-    void init()
+    function handleLandmarks(landmarks: NormalizedLandmark[] | null) {
+      const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+      setAudioScore(af.audioScore)
+
+      let idx: number
+      if (landmarks && landmarks.length > 0) {
+        const prev = prevLandmarksRef.current
+        if (prev) {
+          const vi = displacementToIndex(computeDisplacement(landmarks, prev))
+          idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
+        } else {
+          idx = af.audioScore
+        }
+        prevLandmarksRef.current = landmarks
+      } else {
+        idx = af.audioScore
+      }
+
+      const bl = baselineRef.current
+      bl.push(idx)
+      setIndex(idx)
+      if (bl.ready) {
+        setBaselineReady(true)
+        setLevel(classifyAlert(bl.zScore, idx, settings.alertSensitivity).level)
+      }
+    }
+
     return () => {
       cancelled = true
       cancelAnimationFrame(rafRef.current)
       analyzer.stop()
+      worker.terminate()
     }
-  }, [ready, stream])
+  }, [ready, stream, showPrivacy])
+
+  function handlePrivacyConfirm() {
+    localStorage.setItem('starrest_privacy_confirmed', '1')
+    setShowPrivacy(false)
+  }
+
+  if (showPrivacy) {
+    return <PrivacyScreen onConfirm={handlePrivacyConfirm} />
+  }
 
   if (error) {
     return (
