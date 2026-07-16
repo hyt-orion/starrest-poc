@@ -59,8 +59,8 @@ export function ChildPage() {
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时')), 10000)),
         ])
         setStatus('看护中 · 传输中')
-      } catch {
-        setStatus('模型未加载 · 仅传输视频')
+      } catch (e) {
+        setStatus('模型失败: ' + String(e).slice(0, 60))
       }
       // setInterval 代替 requestAnimationFrame（后台标签页不暂停，只限流到1fps）
       loopInterval = window.setInterval(() => {
