@@ -17,6 +17,8 @@ export function FloatBall({ index, level, baselineReady, pushEnabled }: FloatBal
   const pulsing = level === 'act' && pushEnabled
   return (
     <motion.div
+      role="img"
+      aria-label={`活跃指数 ${baselineReady ? index : '等待中'}，${LEVEL_LABELS[level]}`}
       className="flex h-20 w-20 select-none flex-col items-center justify-center rounded-full shadow-lg shadow-black/50"
       style={{ backgroundColor: color }}
       animate={pulsing ? { scale: [1, 1.18, 1] } : { scale: 1 }}

@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+*:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
