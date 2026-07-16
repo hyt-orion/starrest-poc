@@ -17,7 +17,7 @@ export function MeditationPanel({ onClose }: { onClose: () => void }) {
       timerRef.current = window.setTimeout(() => { i++; tick() }, phases[i % 3].d * 1000)
     }
     tick()
-    return () => clearTimeout(timerRef)
+    return () => clearTimeout(timerRef.current)
   }, [])
 
   const label = phase === 'inhale' ? '吸气' : phase === 'hold' ? '屏息' : '呼气'
