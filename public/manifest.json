@@ -1,0 +1,11 @@
+{
+  "name": "星憩时刻",
+  "short_name": "星憩",
+  "description": "让星宝家长喘口气的 AI 看护产品",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981"
+}

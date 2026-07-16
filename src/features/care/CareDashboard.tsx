@@ -68,6 +68,9 @@ export function CareDashboard() {
 
     worker.postMessage({ type: 'init' })
     setStatus('加载 AI 模型…')
+    void baselineRef.current.initWithHistory().then(() => {
+      if (baselineRef.current.ready) setBaselineReady(true)
+    })
 
     function loop() {
       if (cancelled) return
