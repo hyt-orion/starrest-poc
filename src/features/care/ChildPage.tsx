@@ -52,14 +52,16 @@ export function ChildPage() {
     })
 
     async function init() {
+      setStatus('加载 AI 模型…')
       try {
-        setStatus('加载 AI 模型…')
-        await getPoseDetector()
+        await Promise.race([
+          getPoseDetector(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时')), 10000)),
+        ])
         setStatus('看护中 · 传输中')
-      } catch (e) {
+      } catch {
         setStatus('模型未加载 · 仅传输视频')
       }
-      // 不管模型是否加载成功，都启动循环（至少能传输视频）
       rafRef.current = requestAnimationFrame(loop)
     }
 
