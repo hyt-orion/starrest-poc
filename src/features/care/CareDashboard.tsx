@@ -30,14 +30,17 @@ export function CareDashboard() {
   useEffect(() => {
     if (!status?.frame || !canvasRef.current) return
     setRecvCount((c) => c + 1)
-    const img = new Image()
-    img.onload = () => {
-      const ctx = canvasRef.current?.getContext('2d')
-      if (ctx && canvasRef.current) {
-        ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height)
-      }
-    }
-    img.src = status.frame
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    fetch(status.frame)
+      .then((r) => r.blob())
+      .then(createImageBitmap)
+      .then((bitmap) => {
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        bitmap.close()
+      })
+      .catch(() => {})
   }, [status?.frame])
 
   return (
