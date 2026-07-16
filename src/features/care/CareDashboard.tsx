@@ -88,10 +88,9 @@ export function CareDashboard() {
 
       {/* ── 右半：星宝端画面（接收的视频帧） ── */}
       <div className="relative h-full w-1/2">
-        {connected ? (
-          <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
+        {!connected && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
             <WifiOff className="h-12 w-12 text-white/20" />
             <p className="text-sm text-white/40">星宝端未连接</p>
             <p className="text-xs text-white/30">在星宝的设备上打开星宝端</p>
