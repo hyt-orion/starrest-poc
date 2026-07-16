@@ -67,11 +67,10 @@ export function ChildPage() {
       }, 100)
 
       // 模型后台加载（60秒超时，不阻塞视频传输）
-      setStatus('加载 AI 模型（约10MB）…')
       try {
         await Promise.race([
-          getPoseDetector(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(60s)')), 60000)),
+          getPoseDetector((s) => setStatus(s)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('超时(120s),网络慢?')), 120000)),
         ])
         setStatus('看护中 · 传输中')
       } catch (e) {
