@@ -10,9 +10,6 @@ import { useCareSender } from '../../shared/useCareChannel'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
-/**
- * 星宝端：全屏摄像头 + 本地推理 + 广播视频截帧和数字给家长端
- */
 export function ChildPage() {
   const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
@@ -30,6 +27,10 @@ export function ChildPage() {
   const lastSendRef = useRef(0)
   const audioAnalyzerRef = useRef<AudioAnalyzer | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const indexRef = useRef(0)
+  const levelRef = useRef<AlertLevel>('calm')
+  const audioScoreRef = useRef(0)
+  const baselineReadyRef = useRef(false)
 
   useEffect(() => {
     if (!ready || !stream) return
@@ -44,7 +45,10 @@ export function ChildPage() {
     canvasRef.current.height = 240
 
     void baselineRef.current.initWithHistory().then(() => {
-      if (baselineRef.current.ready) setBaselineReady(true)
+      if (baselineRef.current.ready) {
+        baselineReadyRef.current = true
+        setBaselineReady(true)
+      }
     })
 
     async function init() {
@@ -52,10 +56,11 @@ export function ChildPage() {
         setStatus('加载 AI 模型…')
         await getPoseDetector()
         setStatus('看护中 · 传输中')
-        rafRef.current = requestAnimationFrame(loop)
       } catch (e) {
-        setStatus('模型加载失败：' + String(e))
+        setStatus('模型未加载 · 仅传输视频')
       }
+      // 不管模型是否加载成功，都启动循环（至少能传输视频）
+      rafRef.current = requestAnimationFrame(loop)
     }
 
     function loop() {
@@ -64,6 +69,11 @@ export function ChildPage() {
       if (now - lastDetectRef.current > 200) {
         lastDetectRef.current = now
         void detect(now)
+      }
+      // 发送独立于推理（2fps，推理失败也发送）
+      if (now - lastSendRef.current > 500) {
+        lastSendRef.current = now
+        sendFrame()
       }
       rafRef.current = requestAnimationFrame(loop)
     }
@@ -75,6 +85,7 @@ export function ChildPage() {
         const detector = await getPoseDetector()
         const result = detector.detectForVideo(video, now)
         const af = audioAnalyzerRef.current?.getFeatures() ?? { audioScore: 0, isSilent: true }
+        audioScoreRef.current = af.audioScore
         setAudioScore(af.audioScore)
 
         let idx: number
@@ -93,26 +104,33 @@ export function ChildPage() {
 
         const bl = baselineRef.current
         bl.push(idx)
+        indexRef.current = idx
         setIndex(idx)
-        let lv: AlertLevel = 'calm'
         if (bl.ready) {
+          baselineReadyRef.current = true
           setBaselineReady(true)
-          lv = classifyAlert(bl.zScore, idx, 'normal').level
+          const lv = classifyAlert(bl.zScore, idx, 'normal').level
+          levelRef.current = lv
           setLevel(lv)
         }
+      } catch {
+        // 推理失败不影响发送
+      }
+    }
 
-        // 发送截帧+数字（2fps 低帧率）
-        if (now - lastSendRef.current > 500) {
-          lastSendRef.current = now
-          let frame: string | null = null
-          const canvas = canvasRef.current
-          if (canvas) {
-            canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
-            frame = canvas.toDataURL('image/jpeg', 0.5)
-          }
-          send({ index: idx, level: lv, audioScore: af.audioScore, frame, baselineReady: bl.ready })
-        }
-      } catch { /* skip */ }
+    function sendFrame() {
+      const video = videoRef.current
+      if (!video || video.readyState < 2) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
+      send({
+        index: indexRef.current,
+        level: levelRef.current,
+        audioScore: audioScoreRef.current,
+        frame: canvas.toDataURL('image/jpeg', 0.5),
+        baselineReady: baselineReadyRef.current,
+      })
     }
 
     void init()
@@ -142,7 +160,7 @@ export function ChildPage() {
           <ArrowLeft className="h-4 w-4 text-white/80" />
         </button>
         <div className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
-          <p className="text-xs font-medium text-white/80">星宝端 · 看护中</p>
+          <p className="text-xs font-medium text-white/80">星宝端 · {status}</p>
         </div>
       </div>
       <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
