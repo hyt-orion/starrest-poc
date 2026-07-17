@@ -201,8 +201,8 @@ app.get('/api/room/:code/ws', (c) => {
   const role = c.req.query('role') === 'broadcaster' ? 'broadcaster' : 'subscriber'
   const id = c.env.ROOM.idFromName(code)
   const stub = c.env.ROOM.get(id)
-  // 转发到 DO，DO 内部解析路径与 query 完成升级
-  return stub.fetch(`https://room-do/${code}/ws?role=${role}`)
+  // 转发原始请求到 DO（必须保留 Upgrade 头，否则 DO 无法升级 WebSocket）
+  return stub.fetch(c.req.raw)
 })
 
 // ===== 定时清理（Cron Trigger） =====

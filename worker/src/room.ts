@@ -38,7 +38,7 @@ export class RoomDO implements DurableObject {
 
     // 其余路径：WebSocket 升级
     const upgradeHeader = request.headers.get('Upgrade')
-    if (upgradeHeader !== 'websocket') {
+    if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
       return new Response('Expected websocket', { status: 426 })
     }
 
