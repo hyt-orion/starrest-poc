@@ -15,8 +15,12 @@ export { RoomDO } from './room'
 
 const app = new Hono<{ Bindings: Env }>()
 
-// CORS — 自定义实现，WebSocket 升级请求跳过（避免破坏 101 响应）
+// CORS — room 路由自己处理 CORS，其他路由走中间件
 app.use('*', async (c, next) => {
+  // room 路由的响应已有 CORS 头，跳过中间件避免干扰
+  if (c.req.path.startsWith('/api/room/')) {
+    return next()
+  }
   const upgrade = c.req.header('Upgrade')
   if (upgrade?.toLowerCase() === 'websocket') {
     return next()
