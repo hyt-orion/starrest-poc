@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { verifyJWT, hashPassword, verifyPassword, signJWT } from './auth'
 import {
   type Env,
@@ -16,12 +15,32 @@ export { RoomDO } from './room'
 
 const app = new Hono<{ Bindings: Env }>()
 
-// CORS — 硬编码 origin，不依赖环境变量（避免部署时 vars 未设置导致 CORS 失败）
-app.use('*', cors({
-  origin: ['https://hyt-orion.github.io', 'http://localhost:5173'],
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-}))
+// CORS — 自定义实现，WebSocket 升级请求跳过（避免破坏 101 响应）
+app.use('*', async (c, next) => {
+  const upgrade = c.req.header('Upgrade')
+  if (upgrade?.toLowerCase() === 'websocket') {
+    return next()
+  }
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': c.req.header('Origin') || '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
+  }
+  await next()
+  const origin = c.req.header('Origin')
+  if (origin) {
+    try {
+      c.res.headers.set('Access-Control-Allow-Origin', origin)
+      c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    } catch {}
+  }
+})
 
 // 健康检查
 app.get('/', (c) => c.json({ ok: true, service: 'starrest-api' }))
