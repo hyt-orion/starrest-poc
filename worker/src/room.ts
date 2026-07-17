@@ -6,8 +6,6 @@
 export class RoomDO implements DurableObject {
   state: DurableObjectState
   env: unknown
-  latestData: any = null
-  lastUpdate: number = 0
 
   constructor(state: DurableObjectState, env: unknown) {
     this.state = state
@@ -23,23 +21,22 @@ export class RoomDO implements DurableObject {
 
     // 房间信息
     if (url.pathname.endsWith('/info')) {
+      const stored = await this.state.storage.get('frame')
       return new Response(
         JSON.stringify({
-          broadcasterOnline: !!this.latestData && Date.now() - this.lastUpdate < 5000,
-          online: this.latestData ? 1 : 0,
+          broadcasterOnline: !!stored,
+          online: stored ? 1 : 0,
           subscribers: 0,
-          lastUpdate: this.lastUpdate,
         }),
         { headers: corsHeaders },
       )
     }
 
-    // POST 帧：星宝端推送
+    // POST 帧：星宝端推送（持久化存储，DO 被回收后数据不丢）
     if (url.pathname.endsWith('/frame') && request.method === 'POST') {
       try {
         const data = await request.json()
-        this.latestData = data
-        this.lastUpdate = Date.now()
+        await this.state.storage.put('frame', { ...data, timestamp: Date.now() })
         return new Response('{"ok":true}', { headers: corsHeaders })
       } catch {
         return new Response('{"error":"bad request"}', { status: 400, headers: corsHeaders })
@@ -48,8 +45,9 @@ export class RoomDO implements DurableObject {
 
     // GET 帧：家长端拉取
     if (url.pathname.endsWith('/frame') && request.method === 'GET') {
-      if (this.latestData && Date.now() - this.lastUpdate < 10000) {
-        return new Response(JSON.stringify(this.latestData), { headers: corsHeaders })
+      const stored = await this.state.storage.get<any>('frame')
+      if (stored && Date.now() - (stored.timestamp || 0) < 10000) {
+        return new Response(JSON.stringify(stored), { headers: corsHeaders })
       }
       return new Response('{"error":"no data"}', { status: 404, headers: corsHeaders })
     }
