@@ -129,11 +129,20 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
     let ws: WebSocket | null = null
     let cancelled = false
     let lastTs = 0
+    let pingInterval: number | undefined
 
     function connect() {
       if (cancelled) return
       ws = new WebSocket(wsUrl)
-      ws.onopen = () => setConnected(true)
+      ws.onopen = () => {
+        setConnected(true)
+        // 心跳保活：每 5 秒发 ping，防止 Cloudflare 关闭空闲连接
+        pingInterval = window.setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            try { ws.send('ping') } catch {}
+          }
+        }, 5000)
+      }
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as CareStatus
@@ -150,6 +159,7 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
       }
       ws.onclose = () => {
         setConnected(false)
+        if (pingInterval) clearInterval(pingInterval)
         if (!cancelled) setTimeout(connect, 2000)
       }
       ws.onerror = () => {
@@ -160,6 +170,7 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
 
     return () => {
       cancelled = true
+      if (pingInterval) clearInterval(pingInterval)
       try { ws?.close() } catch {}
     }
   }, [roomCode])
