@@ -92,9 +92,9 @@ export function CareDashboard() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-slate-950">
-      {/* 上半：悬浮球 + 喘息活动 */}
-      <div className="flex flex-1 flex-col border-b border-slate-800">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-950">
+      {/* 全屏：悬浮球 + 喘息活动 */}
+      <div className="flex h-full w-full flex-col">
         <div className="flex items-center justify-between px-4 pt-4">
           <span className="text-sm font-medium text-white/70">星憩时刻 · 家长端</span>
           <button onClick={() => navigate('/settings')} aria-label="设置" className="text-white/40 hover:text-white">
@@ -152,38 +152,34 @@ export function CareDashboard() {
         </div>
       </div>
 
-      {/* 下半：星宝端视频 */}
-      <div ref={fullscreenRef} className="relative h-[40%] w-full bg-slate-950">
+      {/* 右上角悬浮：星宝端视频 */}
+      <div ref={fullscreenRef} className="absolute right-3 top-14 z-20 h-[30%] w-[28%] overflow-hidden rounded-xl border border-slate-700 bg-slate-950 shadow-xl">
         <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-contain" />
         {!connected && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
-            <WifiOff className="h-12 w-12 text-white/20" />
-            <p className="text-sm text-white/40">星宝端未连接</p>
-            <p className="text-xs text-white/30">在星宝的设备上打开星宝端</p>
-            <a href="#/child" target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white">
-              <ExternalLink className="h-4 w-4" /> 打开星宝端
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950 text-center p-2">
+            <WifiOff className="h-8 w-8 text-white/20" />
+            <p className="text-[10px] text-white/40">星宝端未连接</p>
+            <a href="#/child" target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[10px] text-white">
+              <ExternalLink className="h-3 w-3" /> 打开
             </a>
           </div>
         )}
-        <div className="absolute left-4 top-4 flex items-center gap-2">
-          <div className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
-            <p className="text-xs font-medium text-white/80">{connected ? '星宝看护 · 实时' : '星宝看护 · 离线'}</p>
+        <div className="absolute left-1 top-1 flex items-center gap-1">
+          <div className="rounded bg-black/60 px-1.5 py-0.5 backdrop-blur-sm">
+            <p className="text-[9px] font-medium text-white/80">{connected ? '实时' : '离线'}</p>
           </div>
           <button
             onClick={toggleFullscreen}
             aria-label={isFullscreen ? '退出全屏' : '全屏'}
-            className="rounded-lg bg-black/40 p-1.5 backdrop-blur-sm text-white/60 hover:text-white"
+            className="rounded bg-black/60 p-0.5 backdrop-blur-sm text-white/60 hover:text-white"
           >
-            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            {isFullscreen ? <Minimize className="h-3 w-3" /> : <Maximize className="h-3 w-3" />}
           </button>
         </div>
         {connected && (
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between rounded-lg bg-black/40 px-4 py-2 backdrop-blur-sm">
-            <div className="space-y-0.5">
-              <p className="text-sm text-white/80">{LEVEL_LABELS[level]} · 指数 {index}</p>
-              <p className="text-xs text-white/50">{behavior}</p>
-            </div>
-            <p className="text-[10px] text-white/40">接收{recvCount}帧</p>
+          <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between rounded bg-black/60 px-2 py-1 backdrop-blur-sm">
+            <span className="text-[9px] text-white/80">{LEVEL_LABELS[level]} {index}</span>
+            <span className="text-[8px] text-white/40">{behavior}</span>
           </div>
         )}
       </div>
