@@ -38,16 +38,16 @@ export function useCareSender(roomCode?: string) {
       return
     }
 
-    // HTTP POST 模式：用 sendBeacon 避免 CORS 预检（text/plain 是简单请求）
+    // HTTP POST 模式：no-cors 模式，浏览器不检查 CORS，请求一定能发出
     const url = `${WORKER_URL}/api/room/${roomCode}/frame`
     sendRef.current = (data) => {
       const body = JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() })
-      const blob = new Blob([body], { type: 'text/plain' })
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, blob)
-      } else {
-        fetch(url, { method: 'POST', body: blob }).catch(() => {})
-      }
+      fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body,
+      }).catch(() => {})
     }
   }, [roomCode])
 
