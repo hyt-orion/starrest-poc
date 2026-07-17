@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { logout } from '../auth/authStore'
-import { getSettings, saveSettings, clearAllData, type Sensitivity } from './settingsStore'
+import { getSettings, saveSettings as saveSettingsAsync, clearAllData, type Sensitivity } from './settingsStore'
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -19,8 +19,8 @@ export function SettingsPage() {
   function handleClearData() {
     if (confirm('确认清除所有本地数据？包括账号、看护基线和设置。')) { clearAllData(); logoutState(); navigate('/login') }
   }
-  function handleSensitivity(s: Sensitivity) { setAlertSensitivity(s); saveSettings({ alertSensitivity: s }) }
-  function handlePushToggle() { const n = !pushEnabled; setPushEnabled(n); saveSettings({ pushEnabled: n }) }
+  function handleSensitivity(s: Sensitivity) { setAlertSensitivity(s); void saveSettingsAsync({ alertSensitivity: s }) }
+  function handlePushToggle() { const n = !pushEnabled; setPushEnabled(n); void saveSettingsAsync({ pushEnabled: n }) }
 
   if (showPrivacy) return <PrivacyPolicy onBack={() => setShowPrivacy(false)} />
   if (showTerms) return <UserTerms onBack={() => setShowTerms(false)} />

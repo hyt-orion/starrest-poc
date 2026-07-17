@@ -34,9 +34,9 @@ export function CareDashboard() {
 
   const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(handleFrame)
 
-  function handleRelaxClose() {
+  async function handleRelaxClose() {
     setActiveRelax('none')
-    const { state, newReward } = completeSession()
+    const { state, newReward } = await completeSession()
     setRewardState(state)
     setCurrentReward(newReward)
     setShowBlindBox(true)

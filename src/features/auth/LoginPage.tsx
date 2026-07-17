@@ -12,6 +12,7 @@ export function LoginPage() {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(
     () => !localStorage.getItem(ONBOARDED_KEY),
   )
@@ -21,12 +22,15 @@ export function LoginPage() {
     setShowOnboarding(false)
   }
 
-  function handlePhoneLogin() {
+  async function handlePhoneLogin() {
     if (!/^1\d{10}$/.test(phone)) {
       setError('请输入正确的 11 位手机号')
       return
     }
-    const result = loginWithPhonePassword(phone, password)
+    setLoading(true)
+    setError('')
+    const result = await loginWithPhonePassword(phone, password)
+    setLoading(false)
     if (result.error) {
       setError(result.error)
       return
@@ -66,7 +70,9 @@ export function LoginPage() {
             className="input"
           />
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <button onClick={handlePhoneLogin} className="btn-primary">登录</button>
+          <button onClick={handlePhoneLogin} disabled={loading} className="btn-primary">
+            {loading ? '登录中…' : '登录'}
+          </button>
           <p className="text-center text-xs text-white/40">首次输入手机号和密码将自动注册</p>
         </div>
 

@@ -1,7 +1,7 @@
 /**
- * 用户设置持久化（localStorage）
- * 上线替换为后端 API
+ * 用户设置（后端 API + localStorage 缓存）
  */
+import { apiGetSettings, apiSaveSettings } from '../../shared/apiClient'
 
 export type Sensitivity = 'low' | 'normal' | 'high'
 
@@ -26,16 +26,32 @@ export function getSettings(): Settings {
   }
 }
 
-export function saveSettings(patch: Partial<Settings>): Settings {
+export async function fetchSettingsFromServer(): Promise<Settings> {
+  const res = await apiGetSettings()
+  if (res.data) {
+    const settings: Settings = {
+      alertSensitivity: res.data.alertSensitivity as Sensitivity,
+      pushEnabled: res.data.pushEnabled,
+    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    return settings
+  }
+  return getSettings()
+}
+
+export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = { ...getSettings(), ...patch }
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
+  await apiSaveSettings(next.alertSensitivity, next.pushEnabled)
   return next
 }
 
-/** 清除全量本地数据（用户表 + 登录态 + 引导 + 设置） */
+/** 清除全量本地数据 */
 export function clearAllData() {
-  localStorage.removeItem('starrest_users')
   localStorage.removeItem('starrest_current_user')
   localStorage.removeItem('starrest_onboarded')
   localStorage.removeItem('starrest_settings')
+  localStorage.removeItem('starrest_rewards')
+  localStorage.removeItem('starrest_privacy_confirmed')
+  localStorage.removeItem('starrest_jwt')
 }
