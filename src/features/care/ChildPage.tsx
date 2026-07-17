@@ -81,8 +81,8 @@ export function ChildPage() {
     analyzer.start(stream)
     audioAnalyzerRef.current = analyzer
     canvasRef.current = document.createElement('canvas')
-    canvasRef.current.width = 160
-    canvasRef.current.height = 120
+    canvasRef.current.width = 320
+    canvasRef.current.height = 240
 
     void baselineRef.current.initWithHistory().then(() => {
       if (baselineRef.current.ready) { baselineReadyRef.current = true; setBaselineReady(true) }
@@ -93,7 +93,7 @@ export function ChildPage() {
         if (cancelled) return
         const now = performance.now()
         if (now - lastDetectRef.current > 200) { lastDetectRef.current = now; void detect() }
-        if (now - lastSendRef.current > 500) { lastSendRef.current = now; sendFrame() }
+        if (now - lastSendRef.current > 250) { lastSendRef.current = now; sendFrame() }
       }, 100)
       setStatus('加载MoveNet模型...')
       try {
@@ -156,10 +156,10 @@ export function ChildPage() {
       if (video.paused) { void video.play().catch(() => {}) }
       const canvas = canvasRef.current
       if (!canvas) return
-      canvas.getContext('2d')?.drawImage(video, 0, 0, 160, 120)
+      canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
       send({
         index: indexRef.current, level: levelRef.current, audioScore: audioScoreRef.current,
-        frame: canvas.toDataURL('image/jpeg', 0.3), baselineReady: baselineReadyRef.current,
+        frame: canvas.toDataURL('image/jpeg', 0.5), baselineReady: baselineReadyRef.current,
         behavior: behaviorRef.current,
       })
     }
