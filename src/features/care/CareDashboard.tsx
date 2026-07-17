@@ -5,18 +5,15 @@ import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
 import { BlindBox } from '../rewards/BlindBox'
 import { getRewards, completeSession, getWeeklyRelaxMinutes, type Reward } from '../rewards/rewardsStore'
 import { useNavigate } from 'react-router-dom'
-import { Settings, WifiOff, ExternalLink, Maximize, Minimize, Link2, Unlink } from 'lucide-react'
+import { Settings, WifiOff, ExternalLink, Maximize, Minimize } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
 import { LEVEL_LABELS } from './alertClassifier'
 import { useFullscreen } from '../../shared/useFullscreen'
 import { sendNotification, isNotificationSupported, requestNotificationPermission } from '../../shared/notifications'
 import { logEvent } from './EventLog'
 import { acquireWakeLock, releaseWakeLock, isWakeLockSupported } from '../../shared/wakeLock'
-import { createRoom, getRoomInfo } from '../../shared/roomCode'
 
 type RelaxMode = 'none' | 'meditation' | 'craft' | 'treehole'
-
-const ROOM_CODE_KEY = 'starrest_room_code'
 
 export function CareDashboard() {
   const navigate = useNavigate()
@@ -31,11 +28,6 @@ export function CareDashboard() {
   // 活跃指数历史（最近 60 个值，用于迷你折线图）
   const [indexHistory, setIndexHistory] = useState<number[]>([])
   const indexHistoryRef = useRef<number[]>([])
-
-  // 房间码（跨设备配对）
-  const [roomCode, setRoomCode] = useState<string>(() => localStorage.getItem(ROOM_CODE_KEY) || '')
-  const [roomCodeInput, setRoomCodeInput] = useState('')
-  const [roomStatus, setRoomStatus] = useState('')
 
   // 全屏
   const { isFullscreen, toggleFullscreen, fullscreenRef } = useFullscreen()
@@ -54,10 +46,7 @@ export function CareDashboard() {
     img.src = frame
   }, [])
 
-  const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(
-    handleFrame,
-    roomCode || undefined,
-  )
+  const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(handleFrame)
 
   // 记录活跃指数历史
   useEffect(() => {
@@ -72,15 +61,11 @@ export function CareDashboard() {
   useEffect(() => {
     if (level !== 'act' || !baselineReady) return
     const now = Date.now()
-    // 至少 30 秒间隔，避免频繁通知
     if (now - lastAlertRef.current < 30000) return
     lastAlertRef.current = now
-
-    // 桌面通知
     if (isNotificationSupported() && Notification.permission === 'granted') {
       sendNotification('星憩时刻 · 需要关注', `活跃指数 ${index} · ${behavior}`)
     }
-    // 事件记录
     logEvent('alert', `指数${index} · ${behavior} · 音频${audioScore}`)
   }, [level, baselineReady, index, behavior, audioScore])
 
@@ -106,38 +91,6 @@ export function CareDashboard() {
     setShowBlindBox(true)
   }
 
-  // 房间码配对
-  function handleCreateRoom() {
-    const { code } = createRoom()
-    setRoomCode(code)
-    localStorage.setItem(ROOM_CODE_KEY, code)
-    setRoomStatus(`房间 ${code} 已创建，在星宝端输入此码配对`)
-  }
-
-  async function handleJoinRoom() {
-    const code = roomCodeInput.trim()
-    if (!/^\d{4}$/.test(code)) {
-      setRoomStatus('请输入 4 位数字房间码')
-      return
-    }
-    setRoomStatus('查询房间…')
-    const info = await getRoomInfo(code)
-    if (info.error) {
-      setRoomStatus(`失败: ${info.error}`)
-      return
-    }
-    setRoomCode(code)
-    localStorage.setItem(ROOM_CODE_KEY, code)
-    setRoomStatus(`已加入房间 ${code}`)
-    setRoomCodeInput('')
-  }
-
-  function handleDisconnect() {
-    setRoomCode('')
-    localStorage.removeItem(ROOM_CODE_KEY)
-    setRoomStatus('已断开房间配对，回退本地模式')
-  }
-
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-950">
       <div className="flex w-1/2 flex-col border-r border-slate-800">
@@ -160,33 +113,6 @@ export function CareDashboard() {
         <p className="pb-2 text-center text-xs text-white/50">
           {connected ? `综合${index} 音频${audioScore} · 接收${recvCount}帧` : '等待星宝端连接…'}
         </p>
-
-        {/* 房间码配对区域 */}
-        <div className="mx-4 mb-2 rounded-lg bg-slate-900/60 p-2">
-          {roomCode ? (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-emerald-400/80">房间 {roomCode} · {connected ? '已连接' : '等待中'}</span>
-              <button onClick={handleDisconnect} className="flex items-center gap-1 text-xs text-white/40 hover:text-white">
-                <Unlink className="h-3 w-3" /> 断开
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={roomCodeInput}
-                onChange={(e) => setRoomCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="输入4位房间码"
-                className="w-24 rounded bg-slate-800 px-2 py-1 text-xs text-white outline-none ring-1 ring-slate-700 focus:ring-emerald-500"
-              />
-              <button onClick={handleJoinRoom} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500">加入</button>
-              <button onClick={handleCreateRoom} className="flex items-center gap-1 rounded bg-slate-700 px-2 py-1 text-xs text-white hover:bg-slate-600">
-                <Link2 className="h-3 w-3" /> 创建
-              </button>
-            </div>
-          )}
-          {roomStatus && <p className="mt-1 text-[10px] text-white/40">{roomStatus}</p>}
-        </div>
 
         {activeRelax === 'none' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
@@ -231,7 +157,7 @@ export function CareDashboard() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
             <WifiOff className="h-12 w-12 text-white/20" />
             <p className="text-sm text-white/40">星宝端未连接</p>
-            <p className="text-xs text-white/30">{roomCode ? '等待星宝端加入房间…' : '在星宝的设备上打开星宝端'}</p>
+            <p className="text-xs text-white/30">在星宝的设备上打开星宝端</p>
             <a href="#/child" target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white">
               <ExternalLink className="h-4 w-4" /> 打开星宝端
             </a>

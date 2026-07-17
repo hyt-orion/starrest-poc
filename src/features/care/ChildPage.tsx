@@ -8,20 +8,8 @@ import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { useCareSender } from '../../shared/useCareChannel'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Link2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { acquireWakeLock, releaseWakeLock, isWakeLockSupported } from '../../shared/wakeLock'
-
-const ROOM_CODE_KEY = 'starrest_room_code'
-
-// 自适应帧率区间（毫秒）
-// 活跃指数 < 20 → 500ms（2fps）
-// 活跃指数 20-60 → 200ms（5fps）
-// 活跃指数 > 60 → 125ms（8fps）
-function intervalForIndex(idx: number): number {
-  if (idx < 20) return 500
-  if (idx > 60) return 125
-  return 200
-}
 
 // 音频特征空值（用于 fallback）
 const EMPTY_AUDIO: AudioFeatures = {
@@ -35,10 +23,7 @@ const EMPTY_AUDIO: AudioFeatures = {
 /** 计算一组关键点的包围盒面积（归一化坐标，0-1） */
 function boundingBoxArea(keypoints: NormalizedPoint[]): number {
   if (keypoints.length === 0) return 0
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const kp of keypoints) {
     if (kp.x < minX) minX = kp.x
     if (kp.x > maxX) maxX = kp.x
@@ -48,21 +33,14 @@ function boundingBoxArea(keypoints: NormalizedPoint[]): number {
   return (maxX - minX) * (maxY - minY)
 }
 
-/**
- * 从多人关键点中选择"主要人物"。
- * 策略：取包围盒面积最大者（最靠近镜头/占画面比例最大的人）。
- */
+/** 从多人关键点中选择"主要人物"（包围盒面积最大者） */
 function pickPrimaryPerson(poses: NormalizedPoint[][]): NormalizedPoint[] | null {
   if (poses.length === 0) return null
   if (poses.length === 1) return poses[0]
-  let bestIdx = 0
-  let bestArea = -1
+  let bestIdx = 0, bestArea = -1
   for (let i = 0; i < poses.length; i++) {
     const area = boundingBoxArea(poses[i])
-    if (area > bestArea) {
-      bestArea = area
-      bestIdx = i
-    }
+    if (area > bestArea) { bestArea = area; bestIdx = i }
   }
   return poses[bestIdx]
 }
@@ -70,9 +48,7 @@ function pickPrimaryPerson(poses: NormalizedPoint[][]): NormalizedPoint[] | null
 export function ChildPage() {
   const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
-  const [roomCode, setRoomCode] = useState(() => localStorage.getItem(ROOM_CODE_KEY) || '')
-  const [roomCodeInput, setRoomCodeInput] = useState('')
-  const send = useCareSender(roomCode || undefined)
+  const send = useCareSender()
   const [index, setIndex] = useState(0)
   const [level, setLevel] = useState<AlertLevel>('calm')
   const [baselineReady, setBaselineReady] = useState(false)
@@ -91,8 +67,6 @@ export function ChildPage() {
   const audioScoreRef = useRef(0)
   const baselineReadyRef = useRef(false)
   const behaviorRef = useRef('行为正常')
-  // 自适应帧率：当前检测/发送间隔（ms），通过 ref 动态调整 setInterval 触发频率
-  const adaptiveIntervalRef = useRef(200)
 
   useEffect(() => {
     if (!ready || !stream) return
@@ -107,31 +81,19 @@ export function ChildPage() {
     canvasRef.current.height = 240
 
     void baselineRef.current.initWithHistory().then(() => {
-      if (baselineRef.current.ready) {
-        baselineReadyRef.current = true
-        setBaselineReady(true)
-      }
+      if (baselineRef.current.ready) { baselineReadyRef.current = true; setBaselineReady(true) }
     })
 
     async function init() {
-      // 用 50ms 轮询 + adaptiveIntervalRef 阈值实现可变间隔的 setInterval
       loopInterval = window.setInterval(() => {
         if (cancelled) return
         const now = performance.now()
-        const interval = adaptiveIntervalRef.current
-        if (now - lastDetectRef.current > interval) {
-          lastDetectRef.current = now
-          void detect()
-        }
-        if (now - lastSendRef.current > interval) {
-          lastSendRef.current = now
-          sendFrame()
-        }
-      }, 50)
+        if (now - lastDetectRef.current > 200) { lastDetectRef.current = now; void detect() }
+        if (now - lastSendRef.current > 200) { lastSendRef.current = now; sendFrame() }
+      }, 100)
       setStatus('加载MoveNet模型...')
       try {
         const video = videoRef.current
-        // 预热多人检测器（与 detect 循环使用同一个 detector）
         if (video) {
           await detectPosesMulti(video)
           setStatus('看护中 · 传输中')
@@ -145,7 +107,6 @@ export function ChildPage() {
       const video = videoRef.current
       if (!video || video.readyState < 2) return
       try {
-        // 多人检测：返回所有人关键点，由 pickPrimaryPerson 选择主要人物做行为分析
         const allPoses = await detectPosesMulti(video)
         const af = audioAnalyzerRef.current?.getFeatures() ?? EMPTY_AUDIO
         audioScoreRef.current = af.audioScore
@@ -168,29 +129,19 @@ export function ChildPage() {
             const vi = displacementToIndex(computeDisplacement(keypoints, prev))
             idx = computeMultimodalIndex(vi, af.audioScore, af.isSilent)
             if (beh.type !== 'normal' && beh.type !== 'stillness') idx = Math.min(idx + 20, 100)
-          } else {
-            idx = af.audioScore
-          }
+          } else { idx = af.audioScore }
           prevLandmarksRef.current = keypoints
-        } else {
-          idx = af.audioScore
-        }
+        } else { idx = af.audioScore }
         const bl = baselineRef.current
         bl.push(idx)
         indexRef.current = idx
         setIndex(idx)
         if (bl.ready) {
-          baselineReadyRef.current = true
-          setBaselineReady(true)
+          baselineReadyRef.current = true; setBaselineReady(true)
           const lv = classifyAlert(bl.zScore, idx, 'normal').level
-          levelRef.current = lv
-          setLevel(lv)
+          levelRef.current = lv; setLevel(lv)
         }
-        // 根据活跃指数动态调整下一帧的检测/发送间隔
-        adaptiveIntervalRef.current = intervalForIndex(idx)
-      } catch {
-        // 单帧检测失败不影响后续循环
-      }
+      } catch {}
     }
 
     function sendFrame() {
@@ -200,21 +151,14 @@ export function ChildPage() {
       if (!canvas) return
       canvas.getContext('2d')?.drawImage(video, 0, 0, 320, 240)
       send({
-        index: indexRef.current,
-        level: levelRef.current,
-        audioScore: audioScoreRef.current,
-        frame: canvas.toDataURL('image/jpeg', 0.5),
-        baselineReady: baselineReadyRef.current,
+        index: indexRef.current, level: levelRef.current, audioScore: audioScoreRef.current,
+        frame: canvas.toDataURL('image/jpeg', 0.5), baselineReady: baselineReadyRef.current,
         behavior: behaviorRef.current,
       })
     }
 
     void init()
-    return () => {
-      cancelled = true
-      if (loopInterval) clearInterval(loopInterval)
-      analyzer.stop()
-    }
+    return () => { cancelled = true; if (loopInterval) clearInterval(loopInterval); analyzer.stop() }
   }, [ready, stream, send])
 
   // 屏幕常亮（星宝端长时间运行不被杀）
@@ -223,19 +167,6 @@ export function ChildPage() {
     void acquireWakeLock()
     return () => { void releaseWakeLock() }
   }, [])
-
-  function handleJoinRoom() {
-    const code = roomCodeInput.trim()
-    if (!/^\d{4}$/.test(code)) return
-    setRoomCode(code)
-    localStorage.setItem(ROOM_CODE_KEY, code)
-    setRoomCodeInput('')
-  }
-
-  function handleClearRoom() {
-    setRoomCode('')
-    localStorage.removeItem(ROOM_CODE_KEY)
-  }
 
   if (error) {
     return (
@@ -270,32 +201,9 @@ export function ChildPage() {
           {personCount > 1 && (
             <p className="text-[10px] font-medium text-yellow-300/90">检测到 {personCount} 人</p>
           )}
-          <p className="text-[10px] text-white/40">{roomCode ? `房间 ${roomCode}` : '本地模式'} · 传输中</p>
+          <p className="text-[10px] text-white/40">视频+数字传输中</p>
         </div>
       </div>
-
-      {/* 房间码配对 */}
-      {!roomCode && (
-        <div className="absolute right-4 top-16 flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 backdrop-blur-sm">
-          <Link2 className="h-3 w-3 text-emerald-400" />
-          <input
-            type="text"
-            value={roomCodeInput}
-            onChange={(e) => setRoomCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="输入家长端房间码"
-            className="w-28 rounded bg-slate-800 px-2 py-1 text-xs text-white outline-none ring-1 ring-slate-700 focus:ring-emerald-500"
-          />
-          <button onClick={handleJoinRoom} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500">配对</button>
-        </div>
-      )}
-      {roomCode && (
-        <button
-          onClick={handleClearRoom}
-          className="absolute right-4 top-16 rounded-lg bg-black/50 px-3 py-1.5 text-xs text-white/60 backdrop-blur-sm hover:text-white"
-        >
-          房间 {roomCode} · 点击断开
-        </button>
-      )}
     </div>
   )
 }
