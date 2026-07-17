@@ -38,33 +38,18 @@ export function useCareSender(roomCode?: string) {
       return
     }
 
-    // HTTP POST 模式：队列发送（一次只发一个，防止浏览器拦截并发请求）
+    // HTTP POST 模式：fire-and-forget + 3秒超时
     const url = `${WORKER_URL}/api/room/${roomCode}/frame`
-    let posting = false
-    let pendingBody: string | null = null
-
-    async function flushPost() {
-      if (posting || !pendingBody) return
-      posting = true
-      const body = pendingBody
-      pendingBody = null
-      try {
-        await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        })
-      } catch {
-        // 网络失败，静默丢弃
-      }
-      posting = false
-      // 如果等待期间有新数据，立即发下一个
-      if (pendingBody) void flushPost()
-    }
-
     sendRef.current = (data) => {
-      pendingBody = JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() })
-      void flushPost()
+      const body = JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() })
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 3000)
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: controller.signal,
+      }).catch(() => {}).finally(() => clearTimeout(timer))
     }
   }, [roomCode])
 
