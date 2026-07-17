@@ -1,0 +1,12 @@
+name = "starrest-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "starrest-db"
+database_id = "e46344c7-75bb-4b31-9d03-8c3b246e4c48"
+
+[vars]
+JWT_SECRET = "CHANGE_ME_IN_PRODUCTION"
+CORS_ORIGIN = "https://hyt-orion.github.io"
