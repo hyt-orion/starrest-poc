@@ -92,8 +92,9 @@ export function CareDashboard() {
   }
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-slate-950">
-      <div className="flex w-1/2 flex-col border-r border-slate-800">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-slate-950">
+      {/* 上半：悬浮球 + 喘息活动 */}
+      <div className="flex flex-1 flex-col border-b border-slate-800">
         <div className="flex items-center justify-between px-4 pt-4">
           <span className="text-sm font-medium text-white/70">星憩时刻 · 家长端</span>
           <button onClick={() => navigate('/settings')} aria-label="设置" className="text-white/40 hover:text-white">
@@ -151,7 +152,8 @@ export function CareDashboard() {
         </div>
       </div>
 
-      <div ref={fullscreenRef} className="relative h-full w-1/2 bg-slate-950">
+      {/* 下半：星宝端视频 */}
+      <div ref={fullscreenRef} className="relative h-[40%] w-full bg-slate-950">
         <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
         {!connected && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
