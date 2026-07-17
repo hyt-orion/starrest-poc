@@ -9,7 +9,11 @@ const WORKER_URL = 'https://starrest-api.starrest.workers.dev'
 /** 创建房间，返回 4 位房间码 */
 export async function createRoom(): Promise<{ code: string; error?: string }> {
   try {
-    const res = await fetch(`${WORKER_URL}/api/room/create`, { method: 'POST' })
+    const res = await fetch(`${WORKER_URL}/api/room/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
     const json = (await res.json()) as { code?: string; error?: string }
     if (!res.ok || !json.code) {
       return { code: '', error: json.error || '创建房间失败' }
