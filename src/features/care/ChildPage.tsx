@@ -93,7 +93,7 @@ export function ChildPage() {
         if (cancelled) return
         const now = performance.now()
         if (now - lastDetectRef.current > 200) { lastDetectRef.current = now; void detect() }
-        if (now - lastSendRef.current > 1000) { lastSendRef.current = now; sendFrame() }
+        if (now - lastSendRef.current > 500) { lastSendRef.current = now; sendFrame() }
       }, 100)
       setStatus('加载MoveNet模型...')
       try {
@@ -152,6 +152,8 @@ export function ChildPage() {
     function sendFrame() {
       const video = videoRef.current
       if (!video || video.readyState < 2) return
+      // 确保视频在播放（某些手机浏览器会自动暂停）
+      if (video.paused) { void video.play().catch(() => {}) }
       const canvas = canvasRef.current
       if (!canvas) return
       canvas.getContext('2d')?.drawImage(video, 0, 0, 160, 120)
@@ -199,7 +201,7 @@ export function ChildPage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
-      <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
+      <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
       <div className="absolute left-4 top-4 flex items-center gap-2">
         <button onClick={() => navigate('/role')} aria-label="返回" className="rounded-lg bg-black/40 px-3 py-1.5 backdrop-blur-sm">
           <ArrowLeft className="h-4 w-4 text-white/80" />

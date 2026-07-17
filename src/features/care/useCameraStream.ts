@@ -25,7 +25,12 @@ export function useCameraStream() {
         if (videoRef.current) {
           videoRef.current.srcObject = s
           videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play().then(() => setReady(true))
+            videoRef.current?.play()
+              .then(() => setReady(true))
+              .catch(() => {
+                // 某些手机浏览器需要用户交互才能 play，但仍然可以 drawImage
+                setReady(true)
+              })
           }
         }
       })

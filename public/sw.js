@@ -6,7 +6,7 @@
  * - 含缓存版本号，便于强制清理旧缓存
  */
 
-const CACHE_VERSION = 'v14'
+const CACHE_VERSION = 'v15'
 const CACHE_NAME = `starrest-${CACHE_VERSION}`
 
 // 离线回退页面（内联，避免额外的网络请求）
