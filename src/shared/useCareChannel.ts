@@ -15,14 +15,10 @@ export interface CareStatus {
 const STORAGE_KEY = 'starrest-care'
 const WORKER_URL = 'https://starrest-api.starrest.workers.dev'
 
-function buildWsUrl(code: string, role: 'broadcaster' | 'subscriber'): string {
-  return `${WORKER_URL.replace(/^http/, 'ws')}/api/room/${code}/ws?role=${role}`
-}
-
 /**
  * 看护数据发送端
- * roomCode 存在时走 WebSocket（跨设备），否则走 localStorage（同浏览器降级）
- * 返回的 send 回调永远稳定（useCallback([])），不会触发下游 useEffect 重跑
+ * roomCode 存在时走 HTTP POST（跨设备），否则走 localStorage（同浏览器降级）
+ * 返回的 send 回调永远稳定（useCallback([])）
  */
 export function useCareSender(roomCode?: string) {
   const sendRef = useRef<(data: Omit<CareStatus, 'type' | 'timestamp'>) => void>((data) => {
@@ -42,36 +38,18 @@ export function useCareSender(roomCode?: string) {
       return
     }
 
-    // WebSocket 模式
-    const wsUrl = buildWsUrl(roomCode, 'broadcaster')
-    let ws: WebSocket | null = null
-    let cancelled = false
-
-    function connect() {
-      if (cancelled) return
-      ws = new WebSocket(wsUrl)
-      ws.onclose = () => {
-        if (!cancelled) setTimeout(connect, 2000)
-      }
-      ws.onerror = () => {
-        try { ws?.close() } catch {}
-      }
-    }
-    connect()
-
+    // HTTP POST 模式：fire-and-forget
+    const url = `${WORKER_URL}/api/room/${roomCode}/frame`
     sendRef.current = (data) => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() }))
-      }
-    }
-
-    return () => {
-      cancelled = true
-      try { ws?.close() } catch {}
+      const body = JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() })
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }).catch(() => {})
     }
   }, [roomCode])
 
-  // 稳定回调：永远不变
   return useCallback((data: Omit<CareStatus, 'type' | 'timestamp'>) => {
     sendRef.current(data)
   }, [])
@@ -79,7 +57,7 @@ export function useCareSender(roomCode?: string) {
 
 /**
  * 看护数据接收端
- * roomCode 存在时走 WebSocket（跨设备），否则走 localStorage（同浏览器降级）
+ * roomCode 存在时走 HTTP 轮询（跨设备），否则走 localStorage（同浏览器降级）
  */
 export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: string) {
   const [index, setIndex] = useState(0)
@@ -94,6 +72,7 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
   useEffect(() => {
     if (!roomCode) {
       // localStorage 模式
+      let lastTs = 0
       function process(raw: string) {
         try {
           const data = JSON.parse(raw) as CareStatus
@@ -109,7 +88,6 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
           }
         } catch {}
       }
-      let lastTs = 0
       function handler(e: StorageEvent) {
         if (e.key === STORAGE_KEY && e.newValue) process(e.newValue)
       }
@@ -124,54 +102,42 @@ export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: st
       }
     }
 
-    // WebSocket 模式
-    const wsUrl = buildWsUrl(roomCode, 'subscriber')
-    let ws: WebSocket | null = null
+    // HTTP 轮询模式：每 250ms 拉取最新帧
+    const url = `${WORKER_URL}/api/room/${roomCode}/frame`
     let cancelled = false
     let lastTs = 0
-    let pingInterval: number | undefined
 
-    function connect() {
+    async function poll() {
       if (cancelled) return
-      ws = new WebSocket(wsUrl)
-      ws.onopen = () => {
-        setConnected(true)
-        // 心跳保活：每 5 秒发 ping，防止 Cloudflare 关闭空闲连接
-        pingInterval = window.setInterval(() => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            try { ws.send('ping') } catch {}
-          }
-        }, 5000)
-      }
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as CareStatus
-          if (data.type === 'status' && data.timestamp !== lastTs) {
-            lastTs = data.timestamp
-            setIndex(data.index)
-            setLevel(data.level)
-            setAudioScore(data.audioScore)
-            setBaselineReady(data.baselineReady)
-            setBehavior(data.behavior ?? '行为正常')
-            if (data.frame) onFrameRef.current?.(data.frame)
-          }
-        } catch {}
-      }
-      ws.onclose = () => {
+      try {
+        const res = await fetch(url)
+        if (cancelled) return
+        if (!res.ok) {
+          setConnected(false)
+          return
+        }
+        const data = await res.json() as CareStatus
+        if (data.timestamp !== lastTs) {
+          lastTs = data.timestamp
+          setIndex(data.index)
+          setLevel(data.level)
+          setAudioScore(data.audioScore)
+          setBaselineReady(data.baselineReady)
+          setBehavior(data.behavior ?? '行为正常')
+          setConnected(true)
+          if (data.frame) onFrameRef.current?.(data.frame)
+        }
+      } catch {
         setConnected(false)
-        if (pingInterval) clearInterval(pingInterval)
-        if (!cancelled) setTimeout(connect, 2000)
-      }
-      ws.onerror = () => {
-        try { ws?.close() } catch {}
       }
     }
-    connect()
+
+    const interval = setInterval(poll, 250)
+    poll() // 立即拉一次
 
     return () => {
       cancelled = true
-      if (pingInterval) clearInterval(pingInterval)
-      try { ws?.close() } catch {}
+      clearInterval(interval)
     }
   }, [roomCode])
 
