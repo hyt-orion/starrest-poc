@@ -12,12 +12,21 @@ import {
 
 const app = new Hono<{ Bindings: Env }>()
 
-// CORS
+// CORS — 硬编码 origin，不依赖环境变量（避免部署时 vars 未设置导致 CORS 失败）
 app.use('*', cors({
-  origin: (c) => c.env.CORS_ORIGIN,
+  origin: ['https://hyt-orion.github.io', 'http://localhost:5173'],
   allowMethods: ['GET', 'POST', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
+
+// 健康检查
+app.get('/', (c) => c.json({ ok: true, service: 'starrest-api' }))
+
+// 全局错误捕获 — 防止未处理异常返回裸 500
+app.onError((err, c) => {
+  console.error('Unhandled error:', err)
+  return c.json({ error: '服务器内部错误', detail: String(err.message ?? err) }, 500)
+})
 
 // ===== Auth =====
 
