@@ -108,3 +108,15 @@ export async function apiGetBaseline() {
 export async function apiSaveBaseline(value: number) {
   return api('/api/baseline', { method: 'POST', body: { value } })
 }
+
+// ===== Room =====
+
+export async function apiCreateRoom() {
+  return api<{ code: string }>('/api/room/create', { method: 'POST', body: {}, auth: false })
+}
+
+export async function apiGetRoomInfo(code: string) {
+  return api<{ broadcasterOnline?: boolean; online?: number; subscribers?: number }>(
+    `/api/room/${code}/info`, { auth: false },
+  )
+}

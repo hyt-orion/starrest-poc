@@ -26,10 +26,29 @@ app.use('*', cors({
 // 健康检查
 app.get('/', (c) => c.json({ ok: true, service: 'starrest-api' }))
 
-// 全局错误捕获 — 防止未处理异常返回裸 500
+// 全局错误捕获 — 防止未处理异常返回裸 500（手动加 CORS 头，确保浏览器能读取错误响应）
 app.onError((err, c) => {
   console.error('Unhandled error:', err)
-  return c.json({ error: '服务器内部错误', detail: String(err.message ?? err) }, 500)
+  const origin = c.req.header('Origin') || '*'
+  return c.json(
+    { error: '服务器内部错误', detail: String(err.message ?? err) },
+    500,
+    {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  )
+})
+
+// 404 也加 CORS 头
+app.notFound((c) => {
+  const origin = c.req.header('Origin') || '*'
+  return c.json({ error: 'Not Found' }, 404, {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  })
 })
 
 // ===== Auth =====
