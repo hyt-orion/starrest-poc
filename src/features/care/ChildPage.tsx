@@ -93,8 +93,8 @@ export function ChildPage() {
         if (cancelled) return
         const now = performance.now()
         if (now - lastDetectRef.current > 200) { lastDetectRef.current = now; void detect() }
-        if (now - lastSendRef.current > 40) { lastSendRef.current = now; sendFrame() }
-      }, 40)
+        if (now - lastSendRef.current > 25) { lastSendRef.current = now; sendFrame() }
+      }, 25)
       setStatus('加载MoveNet模型...')
       try {
         const video = videoRef.current
