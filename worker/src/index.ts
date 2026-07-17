@@ -222,7 +222,11 @@ app.post('/api/room/:code/frame', async (c) => {
     headers: { 'Content-Type': 'application/json' },
     body,
   }))
-  return new Response(resp.body, { status: resp.status, headers: resp.headers })
+  const respBody = await resp.text()
+  return new Response(respBody, {
+    status: resp.status,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  })
 })
 
 /** 家长端拉取帧数据（GET） */
@@ -232,7 +236,11 @@ app.get('/api/room/:code/frame', async (c) => {
   const id = c.env.ROOM.idFromName(code)
   const stub = c.env.ROOM.get(id)
   const resp = await stub.fetch(`https://room-do/${code}/frame`)
-  return new Response(resp.body, { status: resp.status, headers: resp.headers })
+  const respBody = await resp.text()
+  return new Response(respBody, {
+    status: resp.status,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  })
 })
 
 /** WebSocket 升级路由 */
