@@ -107,13 +107,8 @@ export function CareDashboard() {
   }
 
   // 房间码配对
-  async function handleCreateRoom() {
-    setRoomStatus('创建房间中…')
-    const { code, error } = await createRoom()
-    if (error) {
-      setRoomStatus(`失败: ${error}`)
-      return
-    }
+  function handleCreateRoom() {
+    const { code } = createRoom()
     setRoomCode(code)
     localStorage.setItem(ROOM_CODE_KEY, code)
     setRoomStatus(`房间 ${code} 已创建，在星宝端输入此码配对`)
