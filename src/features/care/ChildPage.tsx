@@ -103,7 +103,8 @@ export function ChildPage() {
           setStatus('看护中 · 传输中')
         }
       } catch (e) {
-        setStatus('模型失败: ' + (e instanceof Error ? e.message : String(e)).slice(0, 60))
+        // 模型加载失败不阻塞视频传输，setInterval 已在运行
+        setStatus('视频传输中（AI模型未加载）')
       }
     }
 
