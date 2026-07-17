@@ -235,9 +235,20 @@ async function runScheduledCleanup(env: Env) {
   }
 }
 
-// Module Worker 导出：fetch + scheduled
+// Module Worker 导出：WebSocket 在 Hono 之前拦截，避免框架干扰 101 升级
 export default {
-  fetch: app.fetch,
+  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // WebSocket 升级请求：直接转发原始 request 给 DO，绕过 Hono
+    const url = new URL(request.url)
+    const wsMatch = url.pathname.match(/^\/api\/room\/(\d{4})\/ws$/)
+    if (wsMatch && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
+      const code = wsMatch[1]
+      const id = env.ROOM.idFromName(code)
+      const stub = env.ROOM.get(id)
+      return stub.fetch(request)
+    }
+    return app.fetch(request, env, ctx)
+  },
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduledCleanup(env))
   },
