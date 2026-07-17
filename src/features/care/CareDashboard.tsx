@@ -154,7 +154,7 @@ export function CareDashboard() {
 
       {/* 下半：星宝端视频 */}
       <div ref={fullscreenRef} className="relative h-[40%] w-full bg-slate-950">
-        <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-cover" />
+        <canvas ref={canvasRef} width={320} height={240} className="h-full w-full object-contain" />
         {!connected && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 text-center">
             <WifiOff className="h-12 w-12 text-white/20" />
