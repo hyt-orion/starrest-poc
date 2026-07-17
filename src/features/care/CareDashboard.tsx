@@ -5,7 +5,7 @@ import { MeditationPanel, TreeHolePanel, CraftPanel } from './RelaxPanels'
 import { BlindBox } from '../rewards/BlindBox'
 import { getRewards, completeSession, getWeeklyRelaxMinutes, type Reward } from '../rewards/rewardsStore'
 import { useNavigate } from 'react-router-dom'
-import { Settings, WifiOff, ExternalLink, Maximize, Minimize } from 'lucide-react'
+import { Settings, WifiOff, ExternalLink, Maximize, Minimize, Link2, Unlink } from 'lucide-react'
 import { getSettings } from '../settings/settingsStore'
 import { LEVEL_LABELS } from './alertClassifier'
 import { useFullscreen } from '../../shared/useFullscreen'
@@ -15,6 +15,8 @@ import { acquireWakeLock, releaseWakeLock, isWakeLockSupported } from '../../sha
 
 type RelaxMode = 'none' | 'meditation' | 'craft' | 'treehole'
 type Tab = 'relax' | 'video'
+
+const ROOM_CODE_KEY = 'starrest_room_code'
 
 export function CareDashboard() {
   const navigate = useNavigate()
@@ -26,6 +28,7 @@ export function CareDashboard() {
   const [rewardState, setRewardState] = useState(getRewards())
   const [showBlindBox, setShowBlindBox] = useState(false)
   const [currentReward, setCurrentReward] = useState<Reward | null>(null)
+  const [roomCode, setRoomCode] = useState<string>(() => localStorage.getItem(ROOM_CODE_KEY) || '')
 
   const [indexHistory, setIndexHistory] = useState<number[]>([])
   const indexHistoryRef = useRef<number[]>([])
@@ -43,7 +46,7 @@ export function CareDashboard() {
     img.src = frame
   }, [])
 
-  const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(handleFrame)
+  const { index, level, audioScore, baselineReady, connected, behavior } = useCareReceiver(handleFrame, roomCode || undefined)
 
   useEffect(() => {
     if (!baselineReady) return
@@ -84,6 +87,17 @@ export function CareDashboard() {
     setShowBlindBox(true)
   }
 
+  function handleCreateRoom() {
+    const code = String(Math.floor(1000 + Math.random() * 9000))
+    setRoomCode(code)
+    localStorage.setItem(ROOM_CODE_KEY, code)
+  }
+
+  function handleDisconnect() {
+    setRoomCode('')
+    localStorage.removeItem(ROOM_CODE_KEY)
+  }
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-slate-950">
       {/* 顶部导航 */}
@@ -102,10 +116,29 @@ export function CareDashboard() {
             星宝视频
           </button>
         </div>
-        <button onClick={() => navigate('/settings')} aria-label="设置" className="text-white/40 hover:text-white">
-          <Settings className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {roomCode ? (
+            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-900/40 px-3 py-1.5">
+              <span className="text-xs font-medium text-emerald-300">房间 {roomCode}</span>
+              <button onClick={handleDisconnect} aria-label="断开房间" className="text-white/40 hover:text-white">
+                <Unlink className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={handleCreateRoom} className="flex items-center gap-1 rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white/60 hover:text-white">
+              <Link2 className="h-3.5 w-3.5" /> 创建房间
+            </button>
+          )}
+          <button onClick={() => navigate('/settings')} aria-label="设置" className="text-white/40 hover:text-white">
+            <Settings className="h-5 w-5" />
+          </button>
+        </div>
       </div>
+      {roomCode && (
+        <p className="px-4 pb-1 text-center text-xs text-emerald-400/60">
+          在星宝端输入房间码 <span className="font-bold text-emerald-300">{roomCode}</span> 进行配对
+        </p>
+      )}
 
       {/* 喘息页面 */}
       {activeTab === 'relax' && (

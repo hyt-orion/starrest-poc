@@ -8,8 +8,10 @@ import { BaselineEngine } from './baselineEngine'
 import { classifyAlert, LEVEL_LABELS, type AlertLevel } from './alertClassifier'
 import { useCareSender } from '../../shared/useCareChannel'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Link2 } from 'lucide-react'
 import { acquireWakeLock, releaseWakeLock, isWakeLockSupported } from '../../shared/wakeLock'
+
+const ROOM_CODE_KEY = 'starrest_room_code'
 
 // 音频特征空值（用于 fallback）
 const EMPTY_AUDIO: AudioFeatures = {
@@ -48,7 +50,9 @@ function pickPrimaryPerson(poses: NormalizedPoint[][]): NormalizedPoint[] | null
 export function ChildPage() {
   const { videoRef, stream, error, ready } = useCameraStream()
   const navigate = useNavigate()
-  const send = useCareSender()
+  const [roomCode, setRoomCode] = useState(() => localStorage.getItem(ROOM_CODE_KEY) || '')
+  const [roomCodeInput, setRoomCodeInput] = useState('')
+  const send = useCareSender(roomCode || undefined)
   const [index, setIndex] = useState(0)
   const [level, setLevel] = useState<AlertLevel>('calm')
   const [baselineReady, setBaselineReady] = useState(false)
@@ -168,6 +172,19 @@ export function ChildPage() {
     return () => { void releaseWakeLock() }
   }, [])
 
+  function handleJoinRoom() {
+    const code = roomCodeInput.trim()
+    if (!/^\d{4}$/.test(code)) return
+    setRoomCode(code)
+    localStorage.setItem(ROOM_CODE_KEY, code)
+    setRoomCodeInput('')
+  }
+
+  function handleClearRoom() {
+    setRoomCode('')
+    localStorage.removeItem(ROOM_CODE_KEY)
+  }
+
   if (error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-slate-950 p-8 text-center">
@@ -201,9 +218,32 @@ export function ChildPage() {
           {personCount > 1 && (
             <p className="text-[10px] font-medium text-yellow-300/90">检测到 {personCount} 人</p>
           )}
-          <p className="text-[10px] text-white/40">视频+数字传输中</p>
+          <p className="text-[10px] text-white/40">{roomCode ? `房间 ${roomCode}` : '本地模式'} · 传输中</p>
         </div>
       </div>
+
+      {/* 房间码配对 */}
+      {!roomCode && (
+        <div className="absolute right-4 top-16 flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 backdrop-blur-sm">
+          <Link2 className="h-3 w-3 text-emerald-400" />
+          <input
+            type="text"
+            value={roomCodeInput}
+            onChange={(e) => setRoomCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="输入房间码"
+            className="w-24 rounded bg-slate-800 px-2 py-1 text-xs text-white outline-none ring-1 ring-slate-700 focus:ring-emerald-500"
+          />
+          <button onClick={handleJoinRoom} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-500">配对</button>
+        </div>
+      )}
+      {roomCode && (
+        <button
+          onClick={handleClearRoom}
+          className="absolute right-4 top-16 rounded-lg bg-black/50 px-3 py-1.5 text-xs text-white/60 backdrop-blur-sm hover:text-white"
+        >
+          房间 {roomCode} · 点击断开
+        </button>
+      )}
     </div>
   )
 }
