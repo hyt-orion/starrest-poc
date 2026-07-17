@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { AlertLevel } from '../features/care/alertClassifier'
+import { useWebSocketSender, useWebSocketReceiver } from './useWebSocketChannel'
+import { buildWsUrl } from './roomCode'
 
 export interface CareStatus {
   type: 'status'
@@ -14,15 +16,20 @@ export interface CareStatus {
 
 const STORAGE_KEY = 'starrest-care'
 
-export function useCareSender() {
+// ===== localStorage 模式（降级方案，保持向后兼容） =====
+
+function useLocalStorageSender() {
   return useCallback((data: Omit<CareStatus, 'type' | 'timestamp'>) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() }))
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...data, type: 'status' as const, timestamp: Date.now() }),
+      )
     } catch {}
   }, [])
 }
 
-export function useCareReceiver(onFrame?: (frame: string) => void) {
+function useLocalStorageReceiver(onFrame?: (frame: string) => void, enabled = true) {
   const [index, setIndex] = useState(0)
   const [level, setLevel] = useState<AlertLevel>('calm')
   const [audioScore, setAudioScore] = useState(0)
@@ -34,6 +41,8 @@ export function useCareReceiver(onFrame?: (frame: string) => void) {
   onFrameRef.current = onFrame
 
   useEffect(() => {
+    if (!enabled) return
+
     function process(raw: string) {
       try {
         const data = JSON.parse(raw) as CareStatus
@@ -61,7 +70,50 @@ export function useCareReceiver(onFrame?: (frame: string) => void) {
       window.removeEventListener('storage', handler)
       clearInterval(interval)
     }
-  }, [])
+  }, [enabled])
 
   return { index, level, audioScore, baselineReady, connected, behavior }
+}
+
+// ===== 对外入口：根据 roomCode 选择通信模式 =====
+
+/**
+ * 看护数据发送端
+ * @param roomCode 可选房间码。提供时走 WebSocket；否则走 localStorage（降级）。
+ */
+export function useCareSender(roomCode?: string) {
+  const url = roomCode ? buildWsUrl(roomCode, 'broadcaster') : null
+  const ws = useWebSocketSender(url)
+  const lsSend = useLocalStorageSender()
+
+  // 用 ref 跟踪当前模式，避免回调失效
+  const useWs = !!roomCode
+  const useWsRef = useRef(useWs)
+  useWsRef.current = useWs
+
+  return useCallback(
+    (data: Omit<CareStatus, 'type' | 'timestamp'>) => {
+      if (useWsRef.current) {
+        ws.send(data)
+      } else {
+        lsSend(data)
+      }
+    },
+    [ws, lsSend],
+  )
+}
+
+/**
+ * 看护数据接收端
+ * @param onFrame 视频帧回调
+ * @param roomCode 可选房间码。提供时走 WebSocket；否则走 localStorage（降级）。
+ */
+export function useCareReceiver(onFrame?: (frame: string) => void, roomCode?: string) {
+  const url = roomCode ? buildWsUrl(roomCode, 'subscriber') : null
+  const useWs = !!roomCode
+  const wsState = useWebSocketReceiver(useWs ? url : null, onFrame)
+  const lsState = useLocalStorageReceiver(onFrame, !useWs)
+
+  // 两个 hook 都按规则调用，但只有活跃模式的状态被采用
+  return useWs ? wsState : lsState
 }

@@ -10,3 +10,17 @@ database_id = "e46344c7-75bb-4b31-9d03-8c3b246e4c48"
 [vars]
 JWT_SECRET = "CHANGE_ME_IN_PRODUCTION"
 CORS_ORIGIN = "https://hyt-orion.github.io"
+
+# Durable Object: 看护房间（WebSocket 中继）
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDO"
+
+# DO 迁移：声明 RoomDO 类
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+# 定时清理：UTC 19:00 = 北京时间 03:00
+[triggers]
+crons = ["0 19 * * *"]

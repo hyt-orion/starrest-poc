@@ -8,7 +8,11 @@ import {
   getRewards, completeRewardSession,
   getTreeholePosts, createTreeholePost,
   getBaseline, saveBaselineEntry,
+  cleanupOldRecords,
 } from './db'
+
+// 导出 Durable Object 类（Cloudflare Workers 运行时需要识别）
+export { RoomDO } from './room'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -136,4 +140,67 @@ app.post('/api/baseline', async (c) => {
   return c.json({ ok: true })
 })
 
-export default app
+// ===== Room（WebSocket 实时通信） =====
+
+/** 验证 4 位数字房间码 */
+function isValidRoomCode(code: string): boolean {
+  return /^\d{4}$/.test(code)
+}
+
+/** 创建房间，返回 4 位房间码 */
+app.post('/api/room/create', async (c) => {
+  const code = String(Math.floor(1000 + Math.random() * 9000))
+  // 触发 DO 实例化（不创建连接，仅注册房间）
+  const id = c.env.ROOM.idFromName(code)
+  const stub = c.env.ROOM.get(id)
+  try {
+    await stub.fetch(`https://room-do/${code}/info`)
+  } catch (e) {
+    console.error('Init room failed:', e)
+  }
+  return c.json({ code })
+})
+
+/** 获取房间在线信息 */
+app.get('/api/room/:code/info', async (c) => {
+  const code = c.req.param('code')
+  if (!isValidRoomCode(code)) return c.json({ error: '房间码不合法' }, 400)
+  const id = c.env.ROOM.idFromName(code)
+  const stub = c.env.ROOM.get(id)
+  const resp = await stub.fetch(`https://room-do/${code}/info`)
+  return new Response(resp.body, { status: resp.status, headers: resp.headers })
+})
+
+/** WebSocket 升级路由 */
+app.get('/api/room/:code/ws', (c) => {
+  const code = c.req.param('code')
+  if (!isValidRoomCode(code)) return c.json({ error: '房间码不合法' }, 400)
+  const upgradeHeader = c.req.header('Upgrade')
+  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+    return c.json({ error: 'Expected websocket' }, 426)
+  }
+  const role = c.req.query('role') === 'broadcaster' ? 'broadcaster' : 'subscriber'
+  const id = c.env.ROOM.idFromName(code)
+  const stub = c.env.ROOM.get(id)
+  // 转发到 DO，DO 内部解析路径与 query 完成升级
+  return stub.fetch(`https://room-do/${code}/ws?role=${role}`)
+})
+
+// ===== 定时清理（Cron Trigger） =====
+
+async function runScheduledCleanup(env: Env) {
+  try {
+    const result = await cleanupOldRecords(env.DB, 7)
+    console.log('[scheduled] cleanup done:', JSON.stringify(result))
+  } catch (e) {
+    console.error('[scheduled] cleanup failed:', e)
+  }
+}
+
+// Module Worker 导出：fetch + scheduled
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runScheduledCleanup(env))
+  },
+}

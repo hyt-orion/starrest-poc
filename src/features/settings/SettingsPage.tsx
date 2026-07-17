@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { logout } from '../auth/authStore'
 import { getSettings, saveSettings as saveSettingsAsync, clearAllData, type Sensitivity } from './settingsStore'
+import { getTheme, toggleTheme } from '../../shared/theme'
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -12,6 +13,7 @@ export function SettingsPage() {
   const [pushEnabled, setPushEnabled] = useState(initial.pushEnabled)
   const [showPrivacy, setShowPrivacy] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const [theme, setTheme] = useState(getTheme())
 
   function handleLogout() {
     logout(); logoutState(); navigate('/login')
@@ -21,6 +23,14 @@ export function SettingsPage() {
   }
   function handleSensitivity(s: Sensitivity) { setAlertSensitivity(s); void saveSettingsAsync({ alertSensitivity: s }) }
   function handlePushToggle() { const n = !pushEnabled; setPushEnabled(n); void saveSettingsAsync({ pushEnabled: n }) }
+  function handleThemeToggle() {
+    const next = toggleTheme()
+    setTheme(next)
+  }
+  function handleResetOnboarding() {
+    localStorage.removeItem('starrest_onboarded')
+    alert('已重置引导页，下次打开登录页时会重新显示')
+  }
 
   if (showPrivacy) return <PrivacyPolicy onBack={() => setShowPrivacy(false)} />
   if (showTerms) return <UserTerms onBack={() => setShowTerms(false)} />
@@ -51,6 +61,42 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      <Section title="显示">
+        <div className="flex items-center justify-between p-4">
+          <span className="text-sm text-white/70">主题</span>
+          <button
+            onClick={handleThemeToggle}
+            aria-label="切换主题"
+            className="relative h-6 w-11 rounded-full transition bg-slate-700"
+            style={theme === 'light' ? { backgroundColor: '#10b981' } : undefined}
+          >
+            <span
+              className="absolute top-0.5 block h-5 w-5 rounded-full bg-white transition"
+              style={{ left: theme === 'light' ? '22px' : '2px' }}
+            />
+          </button>
+        </div>
+        <div className="flex items-center justify-between p-4">
+          <span className="text-sm text-white/70">当前主题</span>
+          <span className="text-sm text-white/40">{theme === 'light' ? '浅色' : '深色'}</span>
+        </div>
+      </Section>
+
+      <Section title="看护数据">
+        <button onClick={() => navigate('/report')} className="flex w-full items-center justify-between p-4 hover:bg-slate-800">
+          <span className="text-sm text-white/70">看护报告</span>
+          <span className="text-sm text-white/40">查看 →</span>
+        </button>
+        <button onClick={() => navigate('/events')} className="flex w-full items-center justify-between p-4 hover:bg-slate-800">
+          <span className="text-sm text-white/70">事件记录</span>
+          <span className="text-sm text-white/40">查看 →</span>
+        </button>
+        <button onClick={() => navigate('/assessment')} className="flex w-full items-center justify-between p-4 hover:bg-slate-800">
+          <span className="text-sm text-white/70">压力评估（ZBI 量表）</span>
+          <span className="text-sm text-white/40">查看 →</span>
+        </button>
+      </Section>
+
       <Section title="隐私">
         <Row label="视频数据处理" value="仅本地处理" />
         <Row label="数据存储" value="不上传云端" />
@@ -65,6 +111,13 @@ export function SettingsPage() {
             <span className={`absolute top-0.5 block h-5 w-5 rounded-full bg-white transition ${pushEnabled ? 'left-[22px]' : 'left-0.5'}`} />
           </button>
         </div>
+      </Section>
+
+      <Section title="应用">
+        <button onClick={handleResetOnboarding} className="flex w-full items-center justify-between p-4 hover:bg-slate-800">
+          <span className="text-sm text-white/70">重置引导页</span>
+          <span className="text-sm text-white/40">重置 →</span>
+        </button>
       </Section>
 
       <Section title="关于">

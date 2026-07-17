@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database
   JWT_SECRET: string
   CORS_ORIGIN: string
+  ROOM: DurableObjectNamespace
 }
 
 // ===== Users =====
@@ -123,4 +124,133 @@ export async function getBaseline(db: D1Database, userId: string, days = 7) {
 export async function saveBaselineEntry(db: D1Database, userId: string, value: number) {
   await db.prepare('INSERT INTO baseline (user_id, value, timestamp) VALUES (?, ?, ?)')
     .bind(userId, value, Date.now()).run()
+}
+
+// ===== Event Log =====
+
+export async function createEventLog(
+  db: D1Database,
+  userId: string,
+  type: string,
+  detail: string = '',
+) {
+  const id = generateId()
+  const timestamp = Date.now()
+  await db.prepare(
+    'INSERT INTO event_log (id, user_id, type, detail, timestamp) VALUES (?, ?, ?, ?, ?)',
+  ).bind(id, userId, type, detail, timestamp).run()
+  return { id, userId, type, detail, timestamp }
+}
+
+export async function getEventLogs(db: D1Database, userId: string, limit = 50) {
+  const results = await db.prepare(
+    'SELECT id, user_id, type, detail, timestamp FROM event_log WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?',
+  ).bind(userId, limit).all<{ id: string; user_id: string; type: string; detail: string; timestamp: number }>()
+  return results.results
+}
+
+export async function deleteEventLog(db: D1Database, id: string) {
+  await db.prepare('DELETE FROM event_log WHERE id = ?').bind(id).run()
+}
+
+// ===== Care Reports =====
+
+export async function saveCareReport(
+  db: D1Database,
+  userId: string,
+  date: string,
+  avgIndex: number,
+  behaviorCounts: Record<string, number>,
+  relaxMinutes: number,
+) {
+  const id = generateId()
+  const timestamp = Date.now()
+  await db.prepare(
+    'INSERT INTO care_reports (id, user_id, date, avg_index, behavior_counts, relax_minutes, timestamp) ' +
+    'VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).bind(id, userId, date, avgIndex, JSON.stringify(behaviorCounts), relaxMinutes, timestamp).run()
+  return { id, userId, date, avgIndex, behaviorCounts, relaxMinutes, timestamp }
+}
+
+export async function getCareReports(db: D1Database, userId: string, limit = 30) {
+  const results = await db.prepare(
+    'SELECT id, user_id, date, avg_index, behavior_counts, relax_minutes, timestamp ' +
+    'FROM care_reports WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?',
+  ).bind(userId, limit).all<{
+    id: string; user_id: string; date: string; avg_index: number
+    behavior_counts: string; relax_minutes: number; timestamp: number
+  }>()
+  return results.results.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    date: r.date,
+    avgIndex: r.avg_index,
+    behaviorCounts: JSON.parse(r.behavior_counts || '{}') as Record<string, number>,
+    relaxMinutes: r.relax_minutes,
+    timestamp: r.timestamp,
+  }))
+}
+
+export async function deleteCareReport(db: D1Database, id: string) {
+  await db.prepare('DELETE FROM care_reports WHERE id = ?').bind(id).run()
+}
+
+// ===== Relax Sessions =====
+
+export async function createRelaxSession(
+  db: D1Database,
+  userId: string,
+  type: string,
+  durationSeconds: number,
+) {
+  const id = generateId()
+  const timestamp = Date.now()
+  await db.prepare(
+    'INSERT INTO relax_sessions (id, user_id, type, duration_seconds, timestamp) VALUES (?, ?, ?, ?, ?)',
+  ).bind(id, userId, type, durationSeconds, timestamp).run()
+  return { id, userId, type, durationSeconds, timestamp }
+}
+
+export async function getRelaxSessions(db: D1Database, userId: string, limit = 50) {
+  const results = await db.prepare(
+    'SELECT id, user_id, type, duration_seconds, timestamp FROM relax_sessions ' +
+    'WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?',
+  ).bind(userId, limit).all<{
+    id: string; user_id: string; type: string; duration_seconds: number; timestamp: number
+  }>()
+  return results.results.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    type: r.type,
+    durationSeconds: r.duration_seconds,
+    timestamp: r.timestamp,
+  }))
+}
+
+export async function deleteRelaxSession(db: D1Database, id: string) {
+  await db.prepare('DELETE FROM relax_sessions WHERE id = ?').bind(id).run()
+}
+
+// ===== 定时清理（Cron Trigger 调用） =====
+
+/**
+ * 清理超过指定天数的旧数据
+ * - baseline 表：按 timestamp 清理
+ * - treehole 表：按 created_at 清理
+ * - 同时清理 event_log / care_reports / relax_sessions（统一按 timestamp 7 天衰减）
+ * 返回每张表删除的行数。
+ */
+export async function cleanupOldRecords(db: D1Database, days = 7) {
+  const cutoff = Date.now() - days * 86400000
+  const results = await db.batch([
+    db.prepare('DELETE FROM baseline WHERE timestamp < ?').bind(cutoff),
+    db.prepare('DELETE FROM treehole WHERE created_at < ?').bind(cutoff),
+    db.prepare('DELETE FROM event_log WHERE timestamp < ?').bind(cutoff),
+    db.prepare('DELETE FROM care_reports WHERE timestamp < ?').bind(cutoff),
+    db.prepare('DELETE FROM relax_sessions WHERE timestamp < ?').bind(cutoff),
+  ])
+  return {
+    cutoff,
+    deleted: results.map((r) => r.meta?.changes ?? 0),
+  }
 }
