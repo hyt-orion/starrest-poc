@@ -63,7 +63,7 @@ export async function loginWithPhonePassword(
       return { user }
     }
     // 注册也失败（网络错误等） → 降级到本地
-    if (regRes.error && regRes.error.includes('Failed to fetch')) {
+    if (regRes.error && isNetworkError(regRes.error)) {
       return localLogin(phone, password)
     }
     return { error: regRes.error || '注册失败' }
@@ -74,12 +74,23 @@ export async function loginWithPhonePassword(
     return { error: '密码错误' }
   }
 
-  // 网络错误（TypeError: Failed to fetch）→ 降级到本地模式
-  if (loginRes.error && (loginRes.error.includes('Failed to fetch') || loginRes.error.includes('fetch'))) {
+  // 网络错误 → 降级到本地模式
+  if (loginRes.error && isNetworkError(loginRes.error)) {
     return localLogin(phone, password)
   }
 
   return { error: loginRes.error || '登录失败' }
+}
+
+/** 判断是否为网络错误（不同浏览器文案不同） */
+function isNetworkError(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('failed to fetch') ||
+    lower.includes('network request failed') ||
+    lower.includes('networkerror') ||
+    lower.includes('load failed') ||
+    lower.includes('fetch') ||
+    lower.includes('network')
 }
 
 /** 本地降级登录/注册 */
